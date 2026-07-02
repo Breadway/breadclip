@@ -1,0 +1,19 @@
+[Unit]
+Description=breadclip clipboard daemon
+Documentation=https://git.breadway.dev/breadway/breadclip
+# Start after the graphical session is ready so WAYLAND_DISPLAY is set
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.cargo/bin/breadclipd
+Restart=on-failure
+RestartSec=2
+
+# Forward stdout/stderr to the journal so `journalctl --user -u breadclipd` works
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=graphical-session.target

@@ -1,0 +1,3 @@
+[workspace]
+members = ["breadclip-core", "breadclipd", "breadclip"]
+resolver = "2"
