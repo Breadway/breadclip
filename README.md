@@ -96,6 +96,12 @@ History is stored under `$XDG_DATA_HOME/breadclip/` (typically `~/.local/share/b
 
 The daemon keeps at most 200 text entries and 50 image entries, trimming oldest entries automatically.
 
+### Privacy
+
+- `history.db` and every file under `images/` are created with `0600` permissions (owner read/write only), regardless of your umask.
+- breadclipd **never persists clipboard content flagged as sensitive by a password manager**. If a clipboard offer advertises the `x-kde-passwordManagerHint` MIME type — the convention used by KeePassXC, Bitwarden, and other password managers to mark content they own — that copy is skipped entirely and never reaches the database.
+- That said, this is still a plaintext SQLite database of everything else you copy. Anything copied by an app that doesn't set the hint (e.g. copying a password from a terminal or a non-integrated app) will be stored like any other text entry. Treat `history.db` as sensitive, and don't rely on it as your only safeguard.
+
 ## Theming
 
 `breadclip` inherits its colour palette from `bread-theme`. The panel renders with an 80% opaque background so Hyprland's `layerrule = blur` can show a frosted-glass effect behind it.

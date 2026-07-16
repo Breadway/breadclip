@@ -1,5 +1,16 @@
-use breadclip_core::{sha256_hex, HistoryDb};
+use breadclip_core::HistoryDb;
 use std::{env, fs, path::PathBuf, process::Command, thread, time::Duration};
+
+/// Argument used to invoke this same binary as the one-shot handler for
+/// `wl-paste --watch`. Kept as a plain positional arg (no clap dependency
+/// needed for a single internal flag).
+const CAPTURE_FLAG: &str = "--capture-once";
+
+/// MIME type convention (originating with KDE's Klipper) that password
+/// managers such as KeePassXC and Bitwarden set on clipboard content they
+/// own, signaling "don't persist this". Any offer advertising it is skipped
+/// entirely.
+const PASSWORD_HINT_MIME: &str = "x-kde-passwordManagerHint";
 
 fn get_available_types() -> Vec<String> {
     Command::new("wl-paste")
@@ -61,7 +72,53 @@ fn acquire_lock() -> bool {
     true
 }
 
+/// Invoked once per clipboard-change event (as the handler command for
+/// `wl-paste --watch`). Reads whatever is on the clipboard right now, skips
+/// it entirely if a password manager flagged it as sensitive, and otherwise
+/// persists a text or image entry to the history DB.
+fn capture_once() {
+    let types = get_available_types();
+
+    if types.iter().any(|t| t == PASSWORD_HINT_MIME) {
+        // Password manager (KeePassXC, Bitwarden, etc.) marked this copy as
+        // sensitive via the x-kde-passwordManagerHint convention — never
+        // persist it.
+        return;
+    }
+
+    let has_image = types.iter().any(|t| t == "image/png" || t == "image/jpeg");
+    let has_text = types.iter().any(|t| t.starts_with("text/"));
+
+    let db = match HistoryDb::open() {
+        Ok(db) => db,
+        Err(e) => {
+            eprintln!("breadclipd: failed to open database: {e}");
+            return;
+        }
+    };
+
+    if has_image && !has_text {
+        if let Some(bytes) = get_clipboard_image() {
+            if let Err(e) = db.insert_image(&bytes) {
+                eprintln!("breadclipd: insert image: {e}");
+            }
+        }
+    } else if has_text {
+        if let Some(text) = get_clipboard_text() {
+            if let Err(e) = db.insert_text(&text) {
+                eprintln!("breadclipd: insert text: {e}");
+            }
+        }
+    }
+}
+
 fn main() {
+    let args: Vec<String> = env::args().collect();
+    if args.get(1).map(String::as_str) == Some(CAPTURE_FLAG) {
+        capture_once();
+        return;
+    }
+
     if !acquire_lock() {
         std::process::exit(1);
     }
@@ -78,10 +135,17 @@ fn main() {
         std::process::exit(1);
     }
 
-    let db = match HistoryDb::open() {
-        Ok(db) => db,
+    // Fail fast (before we start watching) if the DB can't be opened.
+    if let Err(e) = HistoryDb::open() {
+        eprintln!("breadclipd: failed to open database: {e}");
+        let _ = fs::remove_file(lock_file());
+        std::process::exit(1);
+    }
+
+    let exe = match env::current_exe() {
+        Ok(p) => p,
         Err(e) => {
-            eprintln!("breadclipd: failed to open database: {e}");
+            eprintln!("breadclipd: could not resolve own executable path: {e}");
             let _ = fs::remove_file(lock_file());
             std::process::exit(1);
         }
@@ -89,37 +153,25 @@ fn main() {
 
     eprintln!("breadclipd: started (pid {})", std::process::id());
 
-    let mut last_text_hash: Option<String> = None;
-    let mut last_image_hash: Option<String> = None;
-
+    // `wl-paste --watch <cmd>` runs <cmd> once per clipboard-change event
+    // instead of polling — zero idle cost between changes, and no more
+    // forking wl-paste 4-6 times a second. Each event re-invokes this same
+    // binary with --capture-once to do a single read-and-store pass.
     loop {
-        let types = get_available_types();
-        let has_image = types.iter().any(|t| t == "image/png" || t == "image/jpeg");
-        let has_text = types.iter().any(|t| t.starts_with("text/"));
+        let status = Command::new("wl-paste")
+            .args(["--watch"])
+            .arg(&exe)
+            .arg(CAPTURE_FLAG)
+            .status();
 
-        if has_image && !has_text {
-            if let Some(bytes) = get_clipboard_image() {
-                let hash = sha256_hex(&bytes);
-                if Some(&hash) != last_image_hash.as_ref() {
-                    last_image_hash = Some(hash);
-                    last_text_hash = None;
-                    if let Err(e) = db.insert_image(&bytes) {
-                        eprintln!("breadclipd: insert image: {e}");
-                    }
-                }
+        match status {
+            Ok(s) => {
+                eprintln!("breadclipd: wl-paste --watch exited ({s}), restarting in 2s");
             }
-        } else if has_text {
-            if let Some(text) = get_clipboard_text() {
-                let hash = sha256_hex(text.as_bytes());
-                if Some(&hash) != last_text_hash.as_ref() {
-                    last_text_hash = Some(hash);
-                    if let Err(e) = db.insert_text(&text) {
-                        eprintln!("breadclipd: insert text: {e}");
-                    }
-                }
+            Err(e) => {
+                eprintln!("breadclipd: failed to spawn wl-paste --watch: {e}, retrying in 2s");
             }
         }
-
-        thread::sleep(Duration::from_millis(500));
+        thread::sleep(Duration::from_secs(2));
     }
 }

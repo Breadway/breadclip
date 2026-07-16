@@ -1,6 +1,7 @@
 use rusqlite::{params, Connection, Result as SqlResult};
 use sha2::{Digest, Sha256};
-use std::path::PathBuf;
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct ClipEntry {
@@ -20,7 +21,8 @@ impl HistoryDb {
     pub fn open() -> SqlResult<Self> {
         let dir = data_dir();
         std::fs::create_dir_all(&dir).ok();
-        let conn = Connection::open(dir.join("history.db"))?;
+        let db_path = dir.join("history.db");
+        let conn = Connection::open(&db_path)?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS history (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,6 +34,9 @@ impl HistoryDb {
             );
             CREATE INDEX IF NOT EXISTS history_ts ON history(timestamp DESC);",
         )?;
+        // history.db can contain plaintext secrets copied to the clipboard
+        // (passwords, tokens, TOTP codes); restrict it to owner-only, every open.
+        restrict_permissions(&db_path);
         Ok(Self { conn })
     }
 
@@ -55,6 +60,7 @@ impl HistoryDb {
         let path = images_dir.join(format!("{}.png", &hash[..16]));
         if !path.exists() {
             std::fs::write(&path, png_bytes).ok();
+            restrict_permissions(&path);
         }
         let path_str = path.to_string_lossy().to_string();
         let ts = unix_now();
@@ -142,6 +148,17 @@ impl HistoryDb {
             [max_images as i64],
         )?;
         Ok(())
+    }
+}
+
+/// Restrict a file to owner-only read/write (0600). Clipboard history can
+/// contain passwords and other secrets, so this must not be world/group
+/// readable regardless of the process umask.
+fn restrict_permissions(path: &Path) {
+    if let Ok(meta) = std::fs::metadata(path) {
+        let mut perms = meta.permissions();
+        perms.set_mode(0o600);
+        let _ = std::fs::set_permissions(path, perms);
     }
 }
 
