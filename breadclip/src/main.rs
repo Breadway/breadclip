@@ -1,5 +1,4 @@
 mod css;
-mod position;
 
 use breadclip_core::{ClipEntry, HistoryDb};
 use bread_theme::{load_palette};
@@ -7,16 +6,13 @@ use gtk4::{
     glib,
     pango::EllipsizeMode,
     prelude::*,
-    Application, ApplicationWindow, Box as GBox, Button, ContentFit, EventControllerKey, Label,
+    Application, Box as GBox, Button, ContentFit, EventControllerKey, Label,
     ListBox, Orientation, Picture, PolicyType, ScrolledWindow, SearchEntry, SelectionMode,
 };
-use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use std::{
     cell::Cell,
-    env,
     fs,
     io::Write,
-    path::PathBuf,
     process::{Command, Stdio},
     rc::Rc,
 };
@@ -186,36 +182,6 @@ fn do_copy(entry: &ClipEntry) {
     }
 }
 
-// ---- PID file toggle (single-instance, matches breadbox pattern) -------------
-
-fn pid_file() -> PathBuf {
-    env::var("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/tmp"))
-        .join("breadclip.pid")
-}
-
-fn toggle_or_continue() -> bool {
-    let pf = pid_file();
-    if let Ok(content) = fs::read_to_string(&pf) {
-        if let Ok(pid) = content.trim().parse::<u32>() {
-            let alive = fs::read_to_string(format!("/proc/{}/comm", pid))
-                .map(|s| s.trim() == "breadclip")
-                .unwrap_or(false);
-            if alive {
-                let _ = Command::new("kill").arg(pid.to_string()).status();
-                return false;
-            }
-        }
-    }
-    let _ = fs::write(&pf, std::process::id().to_string());
-    true
-}
-
-fn cleanup_pid() {
-    let _ = fs::remove_file(pid_file());
-}
-
 // ---- UI ---------------------------------------------------------------------
 
 fn run_ui(entries: Vec<ClipEntry>) {
@@ -228,21 +194,13 @@ fn run_ui(entries: Vec<ClipEntry>) {
         bread_theme::gtk::apply_app_css(|| css::build_css(&load_palette()));
 
         // Full-screen transparent overlay; panel widget is positioned inside it.
-        let window = ApplicationWindow::builder().application(app).build();
-        window.init_layer_shell();
-        window.set_namespace(Some("breadclip"));
-        window.set_layer(Layer::Overlay);
-        window.set_keyboard_mode(KeyboardMode::Exclusive);
-        for edge in [Edge::Top, Edge::Bottom, Edge::Left, Edge::Right] {
-            window.set_anchor(edge, true);
-        }
-        window.set_exclusive_zone(0);
+        let window = bread_utils::gtk_popup::new_overlay_window(app, "breadclip");
 
         // ---- Position panel relative to the active window ----
         // If a non-fullscreen window is focused, anchor the panel just below it.
         // Otherwise, centre the panel on screen.
-        let active_win = position::get_active_window();
-        let monitor = position::get_focused_monitor();
+        let active_win = bread_utils::hypr::active_window();
+        let monitor = bread_utils::hypr::focused_monitor();
 
         let panel = GBox::new(Orientation::Vertical, 0);
         panel.add_css_class("clip-panel");
@@ -257,7 +215,7 @@ fn run_ui(entries: Vec<ClipEntry>) {
             // Clamp horizontally so the panel never runs off the left/right
             // edge of the focused monitor.
             let clamped_left = win
-                .x
+                .x()
                 .min(mon_x + mon_w - PANEL_WIDTH - PANEL_GAP)
                 .max(mon_x + PANEL_GAP);
 
@@ -265,12 +223,12 @@ fn run_ui(entries: Vec<ClipEntry>) {
             // isn't enough room underneath (e.g. a maximized/tiled window
             // with a text box near the bottom of the screen) — otherwise the
             // panel gets pushed off-screen and never becomes visible.
-            let space_below = (mon_y + mon_h) - (win.y + win.height + PANEL_GAP);
-            let space_above = win.y - mon_y - PANEL_GAP;
+            let space_below = (mon_y + mon_h) - (win.y() + win.height() + PANEL_GAP);
+            let space_above = win.y() - mon_y - PANEL_GAP;
             let top = if space_below >= PANEL_HEIGHT_ESTIMATE || space_below >= space_above {
-                win.y + win.height + PANEL_GAP
+                win.y() + win.height() + PANEL_GAP
             } else {
-                win.y - PANEL_GAP - PANEL_HEIGHT_ESTIMATE
+                win.y() - PANEL_GAP - PANEL_HEIGHT_ESTIMATE
             };
             let clamped_top = top
                 .min(mon_y + mon_h - PANEL_HEIGHT_ESTIMATE - PANEL_GAP)
@@ -337,7 +295,6 @@ fn run_ui(entries: Vec<ClipEntry>) {
         let close_all: Rc<dyn Fn()> = Rc::new({
             let w = window.clone();
             move || {
-                cleanup_pid();
                 w.close();
             }
         });
@@ -421,36 +378,11 @@ fn run_ui(entries: Vec<ClipEntry>) {
                         glib::Propagation::Stop
                     }
                     Key::Down => {
-                        let cur = list_k.selected_row().map(|r| r.index()).unwrap_or(-1);
-                        let mut i = cur + 1;
-                        loop {
-                            match list_k.row_at_index(i) {
-                                Some(r) if r.is_visible() => {
-                                    list_k.select_row(Some(&r));
-                                    break;
-                                }
-                                Some(_) => i += 1,
-                                None => break,
-                            }
-                        }
+                        bread_utils::gtk_popup::select_next_visible(&list_k);
                         glib::Propagation::Stop
                     }
                     Key::Up => {
-                        let cur = list_k.selected_row().map(|r| r.index()).unwrap_or(0);
-                        let mut i = cur - 1;
-                        loop {
-                            if i < 0 {
-                                break;
-                            }
-                            match list_k.row_at_index(i) {
-                                Some(r) if r.is_visible() => {
-                                    list_k.select_row(Some(&r));
-                                    break;
-                                }
-                                Some(_) => i -= 1,
-                                None => break,
-                            }
-                        }
+                        bread_utils::gtk_popup::select_prev_visible(&list_k);
                         glib::Propagation::Stop
                     }
                     _ => glib::Propagation::Proceed,
@@ -473,24 +405,9 @@ fn run_ui(entries: Vec<ClipEntry>) {
         // ---- Click outside panel → close (same pattern as breadbox) ----
         {
             let close_outside = Rc::clone(&close_all);
-            let panel_ref = panel.clone();
-            let win_ref = window.clone();
-            let outside_click = gtk4::GestureClick::new();
-            outside_click.connect_pressed(move |_, _, x, y| {
-                if let Some(b) = panel_ref.compute_bounds(&win_ref) {
-                    let outside = x < b.x() as f64
-                        || x > (b.x() + b.width()) as f64
-                        || y < b.y() as f64
-                        || y > (b.y() + b.height()) as f64;
-                    if outside {
-                        close_outside();
-                    }
-                }
-            });
-            window.add_controller(outside_click);
+            bread_utils::gtk_popup::close_on_outside_click(&window, &panel, move || close_outside());
         }
 
-        window.connect_destroy(|_| cleanup_pid());
         window.present();
         search.grab_focus();
     });
@@ -501,9 +418,17 @@ fn run_ui(entries: Vec<ClipEntry>) {
 // ---- Main -------------------------------------------------------------------
 
 fn main() {
-    if !toggle_or_continue() {
-        return;
-    }
+    // Kept alive for the rest of `main` — dropping it releases the
+    // single-instance lock and removes the pid file, which happens
+    // naturally once `run_ui` returns (after the window closes).
+    let _singleton_guard = match bread_utils::singleton::toggle_or_kill("breadclip") {
+        Ok(bread_utils::singleton::Toggle::Started(guard)) => Some(guard),
+        Ok(bread_utils::singleton::Toggle::KilledExisting) => return,
+        Err(e) => {
+            eprintln!("breadclip: single-instance lock unavailable ({e}); continuing without it");
+            None
+        }
+    };
 
     let entries = HistoryDb::open()
         .and_then(|db| db.list_entries(MAX_ENTRIES))

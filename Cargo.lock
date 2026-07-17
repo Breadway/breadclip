@@ -47,10 +47,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "bread-utils"
+version = "0.2.3"
+dependencies = [
+ "dirs",
+ "gtk4",
+ "gtk4-layer-shell",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "breadclip"
 version = "0.1.1"
 dependencies = [
  "bread-theme",
+ "bread-utils",
  "breadclip-core",
  "gtk4",
  "gtk4-layer-shell",
@@ -61,6 +73,7 @@ dependencies = [
 name = "breadclip-core"
 version = "0.1.0"
 dependencies = [
+ "bread-utils",
  "dirs",
  "hex",
  "rusqlite",

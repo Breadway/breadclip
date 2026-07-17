@@ -8,3 +8,5 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 sha2 = "0.10"
 hex = "0.4"
 dirs = "5"
+# TODO(owner): switch to tag-pinned git dependency once bread-utils is merged and tagged, matching the bread-theme pattern
+bread-utils = { path = "../../bread-ecosystem-fix-worktree/bread-utils" }

@@ -169,9 +169,13 @@ pub fn sha256_hex(data: &[u8]) -> String {
 }
 
 pub fn data_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("~/.local/share"))
-        .join("breadclip")
+    // Was `dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("~/.local/share"))`
+    // — PathBuf/std::fs never expand `~`, so on the rare box where `dirs`
+    // can't resolve a home directory, that fallback silently resolved to a
+    // directory literally named `~` under the current working directory
+    // instead of the user's actual home. bread_utils::xdg resolves a real
+    // $HOME before ever falling back.
+    bread_utils::xdg::data_dir("breadclip")
 }
 
 fn unix_now() -> i64 {
