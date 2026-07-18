@@ -71,7 +71,7 @@ dependencies = [
 
 [[package]]
 name = "breadclip"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "bread-theme",
  "bread-utils",
@@ -83,7 +83,7 @@ dependencies = [
 
 [[package]]
 name = "breadclip-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bread-utils",
  "dirs",
@@ -95,7 +95,7 @@ dependencies = [
 
 [[package]]
 name = "breadclipd"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bread-utils",
  "breadclip-core",
