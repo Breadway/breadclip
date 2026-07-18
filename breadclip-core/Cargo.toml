@@ -1,6 +1,6 @@
 [package]
 name = "breadclip-core"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 
 [dependencies]
@@ -8,9 +8,8 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 sha2 = "0.10"
 hex = "0.4"
 dirs = "5"
-# TODO(owner): switch to tag-pinned git dependency once bread-utils is merged and tagged, matching the bread-theme pattern.
 # (Path corrected: previously pointed at a since-cleaned-up "bread-ecosystem-fix-worktree" checkout that no longer exists on disk.)
-bread-utils = { path = "../../bread-ecosystem/bread-utils" }
+bread-utils = { git = "https://git.breadway.dev/Breadway/bread-ecosystem", tag = "v0.3.0" }
 
 [dev-dependencies]
 tempfile = "3"
