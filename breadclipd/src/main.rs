@@ -1,5 +1,13 @@
+mod content_kind;
+
+use bread_utils::bread_client::BreadClient;
 use breadclip_core::HistoryDb;
 use std::{env, fs, path::PathBuf, process::Command, thread, time::Duration};
+
+/// This app's id in bread's sibling-app namespace registry
+/// (`bread_shared::apps::KNOWN_APPS`) — events are published as
+/// `bread.clip.*`, commands are received on `bread.command.clip.*`.
+const APP_ID: &str = "clip";
 
 /// Argument used to invoke this same binary as the one-shot handler for
 /// `wl-paste --watch`. Kept as a plain positional arg (no clap dependency
@@ -99,15 +107,65 @@ fn capture_once() {
 
     if has_image && !has_text {
         if let Some(bytes) = get_clipboard_image() {
-            if let Err(e) = db.insert_image(&bytes) {
-                eprintln!("breadclipd: insert image: {e}");
+            match db.insert_image(&bytes) {
+                Ok(()) => emit_copied("image", bytes.len()),
+                Err(e) => eprintln!("breadclipd: insert image: {e}"),
             }
         }
     } else if has_text {
         if let Some(text) = get_clipboard_text() {
-            if let Err(e) = db.insert_text(&text) {
-                eprintln!("breadclipd: insert text: {e}");
+            match db.insert_text(&text) {
+                Ok(()) => emit_copied(content_kind::detect(&text), text.len()),
+                Err(e) => eprintln!("breadclipd: insert text: {e}"),
             }
+        }
+    }
+}
+
+/// Publishes `bread.clip.copied` into the bread event fabric. Fire-and-forget
+/// and non-fatal by design (`BreadClient::emit` never blocks or errors this
+/// caller) — breadd being absent or not installed must never affect
+/// breadclip's own clipboard-history functionality, only mean this one
+/// notification doesn't go anywhere.
+fn emit_copied(kind: &str, len: usize) {
+    BreadClient::connect(APP_ID).emit(
+        "bread.clip.copied",
+        serde_json::json!({ "kind": kind, "len": len }),
+    );
+}
+
+/// Reacts to `bread.command.clip.*` verbs. Only `clear` maps to real,
+/// existing breadclip functionality today — `pin`/`select` would need a new
+/// "pinned" concept that doesn't exist anywhere in the history DB schema,
+/// which is a real product decision for breadclip itself (does it want
+/// pinning at all, and what would the GTK UI for it look like?), not
+/// something to fabricate as a side effect of wiring up the event bus. See
+/// `breadclip/EVENTS.md` for the honest current status.
+///
+/// Emits `bread.clip.<verb>.done`/`.failed` per the confirmation convention
+/// in bread's Documentation.md — a module that started this command via
+/// `bread.wait`/`bread.wait_any` can await the real outcome instead of
+/// assuming success the moment it publishes the command.
+fn handle_command(event_name: &str) {
+    let Some(verb) = event_name.strip_prefix("bread.command.clip.") else {
+        return;
+    };
+    match verb {
+        "clear" => match HistoryDb::open().and_then(|db| db.clear_all()) {
+            Ok(()) => {
+                eprintln!("breadclipd: cleared history via bread.command.clip.clear");
+                BreadClient::connect(APP_ID).emit("bread.clip.clear.done", serde_json::json!({}));
+            }
+            Err(e) => {
+                eprintln!("breadclipd: bread.command.clip.clear failed: {e}");
+                BreadClient::connect(APP_ID).emit(
+                    "bread.clip.clear.failed",
+                    serde_json::json!({ "error": e.to_string() }),
+                );
+            }
+        },
+        other => {
+            eprintln!("breadclipd: ignoring unrecognized command verb '{other}'");
         }
     }
 }
@@ -153,6 +211,17 @@ fn main() {
 
     eprintln!("breadclipd: started (pid {})", std::process::id());
 
+    // Long-lived, so this uses BreadClient::subscribe (a persistent
+    // background thread with its own reconnect/backoff loop) rather than a
+    // one-shot connection — the same client type capture_once() uses for
+    // `emit`, just the other half of it. breadd being absent or restarting
+    // is transparent here too: the subscription just quietly stops
+    // delivering commands until it reconnects.
+    let command_client = BreadClient::connect(APP_ID);
+    let _commands = command_client.subscribe("bread.command.clip.**", |event| {
+        handle_command(&event.event);
+    });
+
     // `wl-paste --watch <cmd>` runs <cmd> once per clipboard-change event
     // instead of polling — zero idle cost between changes, and no more
     // forking wl-paste 4-6 times a second. Each event re-invokes this same
@@ -173,5 +242,79 @@ fn main() {
             }
         }
         thread::sleep(Duration::from_secs(2));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Isolates HistoryDb::open() to a fresh temp dir per test. `cargo test`
+    // runs tests in parallel threads within one process by default, and
+    // `XDG_DATA_HOME` is process-global — three tests in this module all
+    // set it, so without this lock they race each other (confirmed: an
+    // earlier version of this file had that exact bug, caught by a flaky
+    // `len() == 2` instead of `1` failure).
+    fn env_test_lock() -> &'static std::sync::Mutex<()> {
+        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+        LOCK.get_or_init(|| std::sync::Mutex::new(()))
+    }
+
+    fn with_isolated_history<F: FnOnce()>(f: F) {
+        let _guard = env_test_lock().lock().unwrap_or_else(|p| p.into_inner());
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::env::set_var("XDG_DATA_HOME", dir.path());
+        f();
+    }
+
+    #[test]
+    fn handle_command_clear_empties_history_even_with_no_daemon_reachable() {
+        // The point of this test: handle_command's actual effect (clearing
+        // the DB) must not depend on breadd being reachable — `emit` inside
+        // it is fire-and-forget and must never gate the real work. No test
+        // daemon is running here, so if clearing the DB were accidentally
+        // made contingent on the emit succeeding, this test would fail.
+        with_isolated_history(|| {
+            let db = HistoryDb::open().expect("open history db");
+            db.insert_text("something to clear").unwrap();
+            assert_eq!(db.list_entries(10).unwrap().len(), 1);
+
+            handle_command("bread.command.clip.clear");
+
+            let db = HistoryDb::open().expect("reopen history db");
+            assert!(db.list_entries(10).unwrap().is_empty());
+        });
+    }
+
+    #[test]
+    fn handle_command_ignores_unrecognized_verb() {
+        with_isolated_history(|| {
+            let db = HistoryDb::open().expect("open history db");
+            db.insert_text("should survive").unwrap();
+
+            handle_command("bread.command.clip.pin");
+
+            let db = HistoryDb::open().expect("reopen history db");
+            assert_eq!(
+                db.list_entries(10).unwrap().len(),
+                1,
+                "an unrecognized verb must not touch history"
+            );
+        });
+    }
+
+    #[test]
+    fn handle_command_ignores_events_outside_its_own_command_namespace() {
+        with_isolated_history(|| {
+            let db = HistoryDb::open().expect("open history db");
+            db.insert_text("should survive").unwrap();
+
+            // Not a `bread.command.clip.*` event at all — must be a no-op.
+            handle_command("bread.command.pad.clear");
+            handle_command("bread.clip.copied");
+
+            let db = HistoryDb::open().expect("reopen history db");
+            assert_eq!(db.list_entries(10).unwrap().len(), 1);
+        });
     }
 }

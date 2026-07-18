@@ -10,8 +10,9 @@ path = "src/main.rs"
 [dependencies]
 breadclip-core = { path = "../breadclip-core" }
 bread-theme = { git = "https://github.com/Breadway/bread-ecosystem", tag = "v0.2.10", features = ["gtk"] }
-# TODO(owner): switch to tag-pinned git dependency once bread-utils is merged and tagged, matching the bread-theme pattern
-bread-utils = { path = "../../bread-ecosystem-fix-worktree/bread-utils", features = ["gtk"] }
+# TODO(owner): switch to tag-pinned git dependency once bread-utils is merged and tagged, matching the bread-theme pattern.
+# (Path corrected: previously pointed at a since-cleaned-up "bread-ecosystem-fix-worktree" checkout that no longer exists on disk.)
+bread-utils = { path = "../../bread-ecosystem/bread-utils", features = ["gtk"] }
 gtk4 = { version = "0.11", features = ["v4_12"] }
 gtk4-layer-shell = "0.8"
 serde_json = "1"

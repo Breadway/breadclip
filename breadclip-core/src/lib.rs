@@ -78,18 +78,40 @@ impl HistoryDb {
             "SELECT id, timestamp, mime_type, content, image_path, content_hash
              FROM history ORDER BY timestamp DESC LIMIT ?1",
         )?;
-        let rows = stmt.query_map([limit as i64], |row| {
-            Ok(ClipEntry {
-                id: row.get(0)?,
-                timestamp: row.get(1)?,
-                mime_type: row.get(2)?,
-                content: row.get(3)?,
-                image_path: row.get(4)?,
-                content_hash: row.get(5)?,
-            })
-        })?
-        .collect::<SqlResult<Vec<_>>>();
+        let rows = stmt
+            .query_map([limit as i64], |row| {
+                Ok(ClipEntry {
+                    id: row.get(0)?,
+                    timestamp: row.get(1)?,
+                    mime_type: row.get(2)?,
+                    content: row.get(3)?,
+                    image_path: row.get(4)?,
+                    content_hash: row.get(5)?,
+                })
+            })?
+            .collect::<SqlResult<Vec<_>>>();
         rows
+    }
+
+    /// Deletes every history entry and every stored image file. Used by the
+    /// `bread.command.clip.clear` handler (see breadclipd's bread-client
+    /// subscription) as well as anything else that wants a hard reset of
+    /// clipboard history.
+    pub fn clear_all(&self) -> SqlResult<()> {
+        let image_paths: Vec<String> = {
+            let mut stmt = self
+                .conn
+                .prepare("SELECT image_path FROM history WHERE image_path IS NOT NULL")?;
+            let paths = stmt
+                .query_map([], |row| row.get(0))?
+                .collect::<SqlResult<Vec<_>>>()?;
+            paths
+        };
+        for path in image_paths {
+            let _ = std::fs::remove_file(path);
+        }
+        self.conn.execute("DELETE FROM history", [])?;
+        Ok(())
     }
 
     pub fn delete_entry(&self, id: i64) -> SqlResult<()> {
@@ -106,7 +128,8 @@ impl HistoryDb {
         if let Some(p) = image_path {
             let _ = std::fs::remove_file(p);
         }
-        self.conn.execute("DELETE FROM history WHERE id = ?1", [id])?;
+        self.conn
+            .execute("DELETE FROM history WHERE id = ?1", [id])?;
         Ok(())
     }
 
@@ -131,7 +154,8 @@ impl HistoryDb {
                        ORDER BY timestamp DESC LIMIT ?1
                    )",
             )?;
-            let paths = stmt.query_map([max_images as i64], |row| row.get(0))?
+            let paths = stmt
+                .query_map([max_images as i64], |row| row.get(0))?
                 .collect::<SqlResult<Vec<_>>>()?;
             paths
         };
@@ -183,4 +207,54 @@ fn unix_now() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // `HistoryDb::open` resolves its path via `data_dir()`, which follows
+    // `$XDG_DATA_HOME` — redirecting it to a fresh temp dir per test keeps
+    // this isolated from a real `~/.local/share/breadclip` and from other
+    // tests. Safe without a lock: this is currently the only test in the
+    // crate that touches XDG_DATA_HOME.
+    fn open_test_db() -> (tempfile::TempDir, HistoryDb) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::env::set_var("XDG_DATA_HOME", dir.path());
+        let db = HistoryDb::open().expect("open history db");
+        (dir, db)
+    }
+
+    #[test]
+    fn clear_all_removes_every_entry_and_image_file() {
+        let (_dir, db) = open_test_db();
+        db.insert_text("first").unwrap();
+        db.insert_text("second").unwrap();
+        db.insert_image(b"not really a png, just bytes for the test")
+            .unwrap();
+
+        let before = db.list_entries(10).unwrap();
+        assert_eq!(before.len(), 3);
+        let image_path = before
+            .iter()
+            .find_map(|e| e.image_path.clone())
+            .expect("one entry should be the image");
+        assert!(Path::new(&image_path).exists());
+
+        db.clear_all().unwrap();
+
+        let after = db.list_entries(10).unwrap();
+        assert!(after.is_empty(), "expected no entries after clear_all");
+        assert!(
+            !Path::new(&image_path).exists(),
+            "image file should be removed by clear_all"
+        );
+    }
+
+    #[test]
+    fn clear_all_on_empty_history_is_a_harmless_no_op() {
+        let (_dir, db) = open_test_db();
+        db.clear_all().unwrap();
+        assert!(db.list_entries(10).unwrap().is_empty());
+    }
 }
