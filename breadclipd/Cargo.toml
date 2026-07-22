@@ -9,10 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 breadclip-core = { path = "../breadclip-core" }
-# TODO(owner): switch to a tag-pinned git dependency once bread-shared is
-# released/tagged for external consumption, matching the bread-theme pattern —
-# see the same stopgap already in place for bread-utils's own dependents.
-bread-utils = { path = "../../bread-ecosystem/bread-utils", features = ["bread-client"] }
+bread-utils = { git = "https://github.com/Breadway/bread-ecosystem", tag = "v0.3.1", features = ["bread-client"] }
 serde_json = "1"
 
 [dev-dependencies]
