@@ -1,4 +1,5 @@
 mod css;
+mod screenshot;
 
 use breadclip_core::{ClipEntry, HistoryDb};
 use bread_theme::{load_palette};
@@ -184,10 +185,17 @@ fn do_copy(entry: &ClipEntry) {
 
 // ---- UI ---------------------------------------------------------------------
 
-fn run_ui(entries: Vec<ClipEntry>) {
-    let app = Application::builder()
-        .application_id("com.breadway.breadclip")
-        .build();
+fn run_ui(entries: Vec<ClipEntry>, screenshot_req: Option<screenshot::ScreenshotRequest>) {
+    let mut builder = Application::builder().application_id("com.breadway.breadclip");
+    if screenshot_req.is_some() {
+        // GApplication is single-instance by default; this machine typically
+        // already has a real breadclip instance, so without this a
+        // screenshot run would just message the *existing* instance instead
+        // of starting a fresh one that ever sees `screenshot_req`.
+        builder = builder.flags(gtk4::gio::ApplicationFlags::NON_UNIQUE);
+    }
+    let app = builder.build();
+    let is_screenshot_run = screenshot_req.is_some();
 
     app.connect_activate(move |app| {
         bread_theme::gtk::apply_shared();
@@ -408,25 +416,50 @@ fn run_ui(entries: Vec<ClipEntry>) {
             bread_utils::gtk_popup::close_on_outside_click(&window, &panel, move || close_outside());
         }
 
+        if let Some(req) = screenshot_req.clone() {
+            screenshot::dispatch(&window, req);
+        }
+
         window.present();
         search.grab_focus();
     });
 
-    app.run();
+    if is_screenshot_run {
+        // GLib's own option parser otherwise rejects --screenshot/--output
+        // before clap ever sees them (`Cli::parse()` already ran in `main`,
+        // over the real argv).
+        app.run_with_args(&[] as &[&str]);
+    } else {
+        app.run();
+    }
 }
 
 // ---- Main -------------------------------------------------------------------
 
 fn main() {
+    use clap::Parser;
+    let cli = screenshot::Cli::parse();
+    let screenshot_req = cli.screenshot_request();
+
+    // `toggle_or_kill` kills whatever's holding the single-instance lock —
+    // a real, already-running breadclip included. A screenshot run must
+    // never touch it: it's a separate, disposable instance by design (same
+    // reasoning as breadbar's `allow_multiple_instances`), not a toggle of
+    // the operator's real clipboard panel.
+    //
     // Kept alive for the rest of `main` — dropping it releases the
     // single-instance lock and removes the pid file, which happens
     // naturally once `run_ui` returns (after the window closes).
-    let _singleton_guard = match bread_utils::singleton::toggle_or_kill("breadclip") {
-        Ok(bread_utils::singleton::Toggle::Started(guard)) => Some(guard),
-        Ok(bread_utils::singleton::Toggle::KilledExisting) => return,
-        Err(e) => {
-            eprintln!("breadclip: single-instance lock unavailable ({e}); continuing without it");
-            None
+    let _singleton_guard = if screenshot_req.is_some() {
+        None
+    } else {
+        match bread_utils::singleton::toggle_or_kill("breadclip") {
+            Ok(bread_utils::singleton::Toggle::Started(guard)) => Some(guard),
+            Ok(bread_utils::singleton::Toggle::KilledExisting) => return,
+            Err(e) => {
+                eprintln!("breadclip: single-instance lock unavailable ({e}); continuing without it");
+                None
+            }
         }
     };
 
@@ -434,5 +467,5 @@ fn main() {
         .and_then(|db| db.list_entries(MAX_ENTRIES))
         .unwrap_or_default();
 
-    run_ui(entries);
+    run_ui(entries, screenshot_req);
 }
