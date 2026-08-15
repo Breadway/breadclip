@@ -114,23 +114,11 @@ dependencies = [
 
 [[package]]
 name = "bread-theme"
-version = "0.3.0"
-source = "git+https://git.breadway.dev/Breadway/bread-ecosystem?tag=v0.3.0#8e82d2d833e992ce939a5b836f910ee109f2e939"
+version = "0.3.1"
+source = "git+https://git.breadway.dev/Breadway/bread-ecosystem?tag=v0.7.1#db2fa3c4b4c1e6933bc5cf62a236d05972fdc886"
 dependencies = [
  "dirs",
  "gtk4",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "bread-utils"
-version = "0.3.0"
-source = "git+https://git.breadway.dev/Breadway/bread-ecosystem?tag=v0.3.0#8e82d2d833e992ce939a5b836f910ee109f2e939"
-dependencies = [
- "dirs",
- "gtk4",
- "gtk4-layer-shell",
  "serde",
  "serde_json",
 ]
@@ -138,10 +126,12 @@ dependencies = [
 [[package]]
 name = "bread-utils"
 version = "0.3.1"
-source = "git+https://github.com/Breadway/bread-ecosystem?tag=v0.3.1#157ed6e3782ac2facd8b517d7c247713f36854ed"
+source = "git+https://git.breadway.dev/Breadway/bread-ecosystem?tag=v0.7.1#db2fa3c4b4c1e6933bc5cf62a236d05972fdc886"
 dependencies = [
  "bread-shared",
  "dirs",
+ "gtk4",
+ "gtk4-layer-shell",
  "serde",
  "serde_json",
 ]
@@ -163,7 +153,7 @@ dependencies = [
  "anyhow",
  "bread-screenshots",
  "bread-theme",
- "bread-utils 0.3.0",
+ "bread-utils 0.3.1 (git+https://git.breadway.dev/Breadway/bread-ecosystem?tag=v0.7.1)",
  "breadclip-core",
  "clap",
  "gtk4",
@@ -175,7 +165,7 @@ dependencies = [
 name = "breadclip-core"
 version = "0.2.1"
 dependencies = [
- "bread-utils 0.3.0",
+ "bread-utils 0.3.1 (git+https://git.breadway.dev/Breadway/bread-ecosystem?tag=v0.7.1)",
  "dirs",
  "hex",
  "rusqlite",
@@ -187,7 +177,7 @@ dependencies = [
 name = "breadclipd"
 version = "0.2.1"
 dependencies = [
- "bread-utils 0.3.1 (git+https://github.com/Breadway/bread-ecosystem?tag=v0.3.1)",
+ "bread-utils 0.3.1 (git+https://git.breadway.dev/Breadway/bread-ecosystem?tag=v0.7.1)",
  "breadclip-core",
  "serde_json",
  "tempfile",

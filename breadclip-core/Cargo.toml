@@ -8,8 +8,7 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 sha2 = "0.10"
 hex = "0.4"
 dirs = "5"
-# (Path corrected: previously pointed at a since-cleaned-up "bread-ecosystem-fix-worktree" checkout that no longer exists on disk.)
-bread-utils = { git = "https://git.breadway.dev/Breadway/bread-ecosystem", tag = "v0.3.0" }
+bread-utils = { git = "https://git.breadway.dev/Breadway/bread-ecosystem", tag = "v0.7.1" }
 
 [dev-dependencies]
 tempfile = "3"
