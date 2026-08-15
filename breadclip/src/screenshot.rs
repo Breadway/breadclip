@@ -13,15 +13,10 @@
 //! `bread-capture`'s isolation module), so the panel always falls back to
 //! centered, which is exactly what we want for a consistent screenshot.
 
+use bread_utils::screenshot_cli::{validate_pair, DEFAULT_HEIGHT, DEFAULT_WIDTH, SETTLE_DELAY};
 use clap::Parser;
 use gtk4::prelude::*;
 use std::path::PathBuf;
-use std::time::Duration;
-
-/// Extra settle time after `map` for the first frame to actually paint
-/// before grim runs — `map` fires once the surface exists, not once
-/// anything has been drawn into it.
-const SETTLE_DELAY: Duration = Duration::from_millis(300);
 
 #[derive(Parser)]
 #[command(name = "breadclip")]
@@ -37,11 +32,11 @@ pub struct Cli {
 
     /// Capture canvas width — matches the isolated compositor's output width
     /// (`bread-capture --isolate-width`).
-    #[arg(long, default_value_t = 1920)]
+    #[arg(long, default_value_t = DEFAULT_WIDTH)]
     pub width: u32,
 
     /// Capture canvas height — see `width`.
-    #[arg(long, default_value_t = 1080)]
+    #[arg(long, default_value_t = DEFAULT_HEIGHT)]
     pub height: u32,
 }
 
@@ -54,16 +49,20 @@ pub struct ScreenshotRequest {
 }
 
 impl Cli {
-    /// `None` for a normal run. Exits the process with an error if
-    /// `--screenshot` was given without `--output`, before any GTK setup
+    /// `None` for a normal run. Exits the process with an error if the
+    /// `--screenshot` / `--output` pair is incomplete, before any GTK setup
     /// happens.
     pub fn screenshot_request(&self) -> Option<ScreenshotRequest> {
-        let view = self.screenshot.clone()?;
-        let Some(output) = self.output.clone() else {
-            eprintln!("breadclip: --screenshot requires --output");
+        if let Err(e) = validate_pair(self.screenshot.as_deref(), self.output.as_deref()) {
+            eprintln!("breadclip: {e}");
             std::process::exit(1);
-        };
-        Some(ScreenshotRequest { view, output, width: self.width, height: self.height })
+        }
+        Some(ScreenshotRequest {
+            view: self.screenshot.clone()?,
+            output: self.output.clone()?,
+            width: self.width,
+            height: self.height,
+        })
     }
 }
 
