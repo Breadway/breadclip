@@ -14,7 +14,8 @@ bread-utils = { git = "https://git.breadway.dev/Breadway/bread-ecosystem", tag =
 # Capture primitives for `--screenshot` mode — see src/screenshot.rs.
 # Not in bread-ecosystem v0.7.1 (crate landed after that tag); same remote
 # as the tag-pinned deps, floating on main until the next ecosystem release.
-bread-screenshots = { git = "https://git.breadway.dev/Breadway/bread-ecosystem", branch = "main" }
+# v0.7.1 predates this crate; rev-pin so this is not `branch = "main"`.
+bread-screenshots = { git = "https://git.breadway.dev/Breadway/bread-ecosystem", rev = "69ce2d67a8de8a09c064aa9d7ff99b46656f0b1d" }
 gtk4 = { version = "0.11", features = ["v4_12"] }
 gtk4-layer-shell = "0.8"
 serde_json = "1"
