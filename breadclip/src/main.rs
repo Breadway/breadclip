@@ -203,6 +203,7 @@ fn run_ui(entries: Vec<ClipEntry>, screenshot_req: Option<screenshot::Screenshot
 
         // Full-screen transparent overlay; panel widget is positioned inside it.
         let window = bread_utils::gtk_popup::new_overlay_window(app, "breadclip");
+        bread_theme::gtk::bind_window_auto(&window);
 
         // ---- Position panel relative to the active window ----
         // If a non-fullscreen window is focused, anchor the panel just below it.

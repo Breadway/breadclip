@@ -9,7 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 breadclip-core = { path = "../breadclip-core" }
-bread-theme = { git = "https://git.breadway.dev/Breadway/bread-ecosystem", tag = "v0.7.2", features = ["gtk"] }
+bread-theme = { git = "https://git.breadway.dev/Breadway/bread-ecosystem", tag = "v0.7.4", features = ["gtk"] }
 bread-utils = { git = "https://git.breadway.dev/Breadway/bread-ecosystem", tag = "v0.7.2", features = ["gtk"] }
 # Capture primitives for `--screenshot` mode — see src/screenshot.rs.
 bread-screenshots = { git = "https://git.breadway.dev/Breadway/bread-ecosystem", tag = "v0.7.2" }
