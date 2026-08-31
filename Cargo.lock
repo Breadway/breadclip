@@ -134,6 +134,7 @@ dependencies = [
  "gtk4-layer-shell",
  "serde",
  "serde_json",
+ "toml_edit 0.22.27",
 ]
 
 [[package]]
@@ -156,11 +157,11 @@ name = "breadclip-core"
 version = "0.2.4"
 dependencies = [
  "bread-utils",
- "dirs",
  "hex",
  "rusqlite",
  "sha2",
  "tempfile",
+ "toml_edit 0.22.27",
 ]
 
 [[package]]
