@@ -18,11 +18,13 @@ use std::{
     rc::Rc,
 };
 
-const PANEL_WIDTH: i32 = 520;
-const MAX_ENTRIES: usize = 200;
+// Pinned entries are exempt from trimming, so the fetch limit can't be
+// derived from the retention caps alone. History stays tiny in practice —
+// fetching it all keeps every pinned row reachable regardless of count.
+const FETCH_ALL: usize = 10_000;
 const PANEL_GAP: i32 = 8; // gap between focused window bottom and panel top
-// Worst-case panel height (search + chips + full-height list), used to keep
-// the panel fully on-screen before its natural size is known.
+// Fallback panel height, used only if measuring the panel before it's shown
+// reports nothing sensible.
 const PANEL_HEIGHT_ESTIMATE: i32 = 580;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -142,6 +144,21 @@ fn build_row(entry: &ClipEntry) -> gtk4::ListBoxRow {
         hbox.append(&text_lbl);
     }
 
+    // Pin / primary-selection badges
+    if entry.pinned {
+        let pin_lbl = Label::new(Some("★"));
+        pin_lbl.add_css_class("clip-meta");
+        pin_lbl.add_css_class("clip-pinned");
+        pin_lbl.set_tooltip_text(Some("Pinned — Ctrl+P toggles"));
+        hbox.append(&pin_lbl);
+    }
+    if entry.is_primary {
+        let prim_lbl = Label::new(Some("primary"));
+        prim_lbl.add_css_class("clip-meta");
+        prim_lbl.set_tooltip_text(Some("Copied from the primary (middle-click) selection"));
+        hbox.append(&prim_lbl);
+    }
+
     let ts_lbl = Label::new(Some(&format_timestamp(entry.timestamp)));
     ts_lbl.add_css_class("clip-meta");
     ts_lbl.set_xalign(1.0);
@@ -153,31 +170,30 @@ fn build_row(entry: &ClipEntry) -> gtk4::ListBoxRow {
 }
 
 fn do_copy(entry: &ClipEntry) {
-    match entry.mime_type.as_str() {
-        "image/png" => {
-            if let Some(ref path) = entry.image_path {
-                if let Ok(file) = fs::File::open(path) {
-                    let _ = Command::new("wl-copy")
-                        .args(["--type", "image/png"])
-                        .stdin(Stdio::from(file))
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .spawn();
-                }
-            }
-        }
-        _ => {
-            if let Some(ref content) = entry.content {
-                if let Ok(mut child) = Command::new("wl-copy")
-                    .stdin(Stdio::piped())
+    if entry.mime_type.starts_with("image/") {
+        // Re-paste with the same type we stored — a JPEG row must be offered
+        // as image/jpeg, not relabeled as image/png.
+        if let Some(ref path) = entry.image_path {
+            if let Ok(file) = fs::File::open(path) {
+                let _ = Command::new("wl-copy")
+                    .args(["--type", entry.mime_type.as_str()])
+                    .stdin(Stdio::from(file))
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
-                    .spawn()
-                {
-                    if let Some(mut stdin) = child.stdin.take() {
-                        let _ = stdin.write_all(content.as_bytes());
-                    }
-                }
+                    .spawn();
+            }
+        }
+        return;
+    }
+    if let Some(ref content) = entry.content {
+        if let Ok(mut child) = Command::new("wl-copy")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+        {
+            if let Some(mut stdin) = child.stdin.take() {
+                let _ = stdin.write_all(content.as_bytes());
             }
         }
     }
@@ -186,6 +202,13 @@ fn do_copy(entry: &ClipEntry) {
 // ---- UI ---------------------------------------------------------------------
 
 fn run_ui(entries: Vec<ClipEntry>, screenshot_req: Option<screenshot::ScreenshotRequest>) {
+    // Live snapshot of the entries backing the list — pinning re-reads the
+    // DB (pinned rows sort first) and rebuilds the rows from this. Built
+    // outside connect_activate because that handler is `Fn` (runs once per
+    // activation) and can't consume the entries vector.
+    let entries_rc: Rc<std::cell::RefCell<Vec<ClipEntry>>> =
+        Rc::new(std::cell::RefCell::new(entries));
+
     let mut builder = Application::builder().application_id("com.breadway.breadclip");
     if screenshot_req.is_some() {
         // GApplication is single-instance by default; this machine typically
@@ -205,52 +228,10 @@ fn run_ui(entries: Vec<ClipEntry>, screenshot_req: Option<screenshot::Screenshot
         let window = bread_utils::gtk_popup::new_overlay_window(app, "breadclip");
         bread_theme::gtk::bind_window_auto(&window);
 
-        // ---- Position panel relative to the active window ----
-        // If a non-fullscreen window is focused, anchor the panel just below it.
-        // Otherwise, centre the panel on screen.
-        let active_win = bread_utils::hypr::active_window();
-        let monitor = bread_utils::hypr::focused_monitor();
-
+        let panel_width = breadclip_core::config::load().panel_width;
         let panel = GBox::new(Orientation::Vertical, 0);
         panel.add_css_class("clip-panel");
-        panel.set_size_request(PANEL_WIDTH, -1);
-
-        if let Some(ref win) = active_win {
-            let (mon_x, mon_y, mon_w, mon_h) = monitor
-                .as_ref()
-                .map(|m| (m.x, m.y, m.width, m.height))
-                .unwrap_or((0, 0, 1920, 1080));
-
-            // Clamp horizontally so the panel never runs off the left/right
-            // edge of the focused monitor.
-            let clamped_left = win
-                .x()
-                .min(mon_x + mon_w - PANEL_WIDTH - PANEL_GAP)
-                .max(mon_x + PANEL_GAP);
-
-            // Prefer anchoring below the window, but flip above it when there
-            // isn't enough room underneath (e.g. a maximized/tiled window
-            // with a text box near the bottom of the screen) — otherwise the
-            // panel gets pushed off-screen and never becomes visible.
-            let space_below = (mon_y + mon_h) - (win.y() + win.height() + PANEL_GAP);
-            let space_above = win.y() - mon_y - PANEL_GAP;
-            let top = if space_below >= PANEL_HEIGHT_ESTIMATE || space_below >= space_above {
-                win.y() + win.height() + PANEL_GAP
-            } else {
-                win.y() - PANEL_GAP - PANEL_HEIGHT_ESTIMATE
-            };
-            let clamped_top = top
-                .min(mon_y + mon_h - PANEL_HEIGHT_ESTIMATE - PANEL_GAP)
-                .max(mon_y + PANEL_GAP);
-
-            panel.set_halign(gtk4::Align::Start);
-            panel.set_valign(gtk4::Align::Start);
-            panel.set_margin_top(clamped_top);
-            panel.set_margin_start(clamped_left);
-        } else {
-            panel.set_halign(gtk4::Align::Center);
-            panel.set_valign(gtk4::Align::Center);
-        }
+        panel.set_size_request(panel_width, -1);
 
         // ---- Search entry ----
         let search = SearchEntry::new();
@@ -286,7 +267,7 @@ fn run_ui(entries: Vec<ClipEntry>, screenshot_req: Option<screenshot::Screenshot
         let list = ListBox::new();
         list.set_selection_mode(SelectionMode::Browse);
 
-        for entry in &entries {
+        for entry in entries_rc.borrow().iter() {
             list.append(&build_row(entry));
         }
         if let Some(first) = list.row_at_index(0) {
@@ -296,6 +277,60 @@ fn run_ui(entries: Vec<ClipEntry>, screenshot_req: Option<screenshot::Screenshot
         scroll.set_child(Some(&list));
         panel.append(&scroll);
         window.set_child(Some(&panel));
+
+        // ---- Position panel relative to the active window ----
+        // Measure the panel's natural height (a short history yields a short
+        // panel) so the anchor math uses the real size instead of a
+        // worst-case estimate. Falls back to the estimate if measurement
+        // reports nothing sensible.
+        let (_min_h, natural_h, _min_baseline, _natural_baseline) =
+            panel.measure(gtk4::Orientation::Vertical, -1);
+        let panel_height = if natural_h > 0 {
+            natural_h
+        } else {
+            PANEL_HEIGHT_ESTIMATE
+        };
+
+        // If a non-fullscreen window is focused, anchor the panel just below it.
+        // Otherwise, centre the panel on screen.
+        let active_win = bread_utils::hypr::active_window();
+        let monitor = bread_utils::hypr::focused_monitor();
+        if let Some(ref win) = active_win {
+            let (mon_x, mon_y, mon_w, mon_h) = monitor
+                .as_ref()
+                .map(|m| (m.x, m.y, m.width, m.height))
+                .unwrap_or((0, 0, 1920, 1080));
+
+            // Clamp horizontally so the panel never runs off the left/right
+            // edge of the focused monitor.
+            let clamped_left = win
+                .x()
+                .min(mon_x + mon_w - panel_width - PANEL_GAP)
+                .max(mon_x + PANEL_GAP);
+
+            // Prefer anchoring below the window, but flip above it when there
+            // isn't enough room underneath (e.g. a maximized/tiled window
+            // with a text box near the bottom of the screen) — otherwise the
+            // panel gets pushed off-screen and never becomes visible.
+            let space_below = (mon_y + mon_h) - (win.y() + win.height() + PANEL_GAP);
+            let space_above = win.y() - mon_y - PANEL_GAP;
+            let top = if space_below >= panel_height || space_below >= space_above {
+                win.y() + win.height() + PANEL_GAP
+            } else {
+                win.y() - PANEL_GAP - panel_height
+            };
+            let clamped_top = top
+                .min(mon_y + mon_h - panel_height - PANEL_GAP)
+                .max(mon_y + PANEL_GAP);
+
+            panel.set_halign(gtk4::Align::Start);
+            panel.set_valign(gtk4::Align::Start);
+            panel.set_margin_top(clamped_top);
+            panel.set_margin_start(clamped_left);
+        } else {
+            panel.set_halign(gtk4::Align::Center);
+            panel.set_valign(gtk4::Align::Center);
+        }
 
         // ---- Shared state ----
         let query_rc: Rc<std::cell::RefCell<String>> = Rc::new(std::cell::RefCell::new(String::new()));
@@ -349,7 +384,11 @@ fn run_ui(entries: Vec<ClipEntry>, screenshot_req: Option<screenshot::Screenshot
         {
             let close_k = Rc::clone(&close_all);
             let list_k = list.clone();
-            key_ctrl.connect_key_pressed(move |_, key, _, _| {
+            let search_k = search.clone();
+            let entries_k = Rc::clone(&entries_rc);
+            let query_k = Rc::clone(&query_rc);
+            let filter_k = Rc::clone(&filter_rc);
+            key_ctrl.connect_key_pressed(move |_, key, _, state| {
                 use gtk4::gdk::Key;
                 match key {
                     Key::Escape => {
@@ -366,6 +405,11 @@ fn run_ui(entries: Vec<ClipEntry>, screenshot_req: Option<screenshot::Screenshot
                         glib::Propagation::Stop
                     }
                     Key::Delete => {
+                        // Deleting a character in the search box must not
+                        // delete the selected history row.
+                        if search_k.has_focus() {
+                            return glib::Propagation::Proceed;
+                        }
                         if let Some(row) = list_k.selected_row() {
                             if let Some(entry) = get_row_entry(&row) {
                                 if let Ok(db) = HistoryDb::open() {
@@ -392,6 +436,48 @@ fn run_ui(entries: Vec<ClipEntry>, screenshot_req: Option<screenshot::Screenshot
                     }
                     Key::Up => {
                         bread_utils::gtk_popup::select_prev_visible(&list_k);
+                        glib::Propagation::Stop
+                    }
+                    // Pin/unpin the selected entry. Pinned rows sort to the
+                    // top and survive trimming, so re-read the DB and rebuild
+                    // the list, then re-select the row we just toggled.
+                    Key::P if state.contains(gtk4::gdk::ModifierType::CONTROL_MASK) => {
+                        if let Some(row) = list_k.selected_row() {
+                            if let Some(entry) = get_row_entry(&row) {
+                                if let Ok(db) = HistoryDb::open() {
+                                    let _ = db.set_pinned(entry.id, !entry.pinned);
+                                }
+                                let target_id = entry.id;
+                                let new_entries = HistoryDb::open()
+                                    .and_then(|db| db.list_entries(FETCH_ALL))
+                                    .unwrap_or_default();
+                                *entries_k.borrow_mut() = new_entries;
+                                while let Some(r) = list_k.row_at_index(0) {
+                                    list_k.remove(&r);
+                                }
+                                {
+                                    let rows = entries_k.borrow();
+                                    for e in rows.iter() {
+                                        list_k.append(&build_row(e));
+                                    }
+                                }
+                                let query = query_k.borrow().clone();
+                                refresh_list(&list_k, &query, filter_k.get());
+                                // Prefer re-selecting the row we just toggled.
+                                let mut i = 0;
+                                while let Some(r) = list_k.row_at_index(i) {
+                                    if get_row_entry(&r)
+                                        .map(|e| e.id == target_id)
+                                        .unwrap_or(false)
+                                        && r.is_visible()
+                                    {
+                                        list_k.select_row(Some(&r));
+                                        break;
+                                    }
+                                    i += 1;
+                                }
+                            }
+                        }
                         glib::Propagation::Stop
                     }
                     _ => glib::Propagation::Proceed,
@@ -465,7 +551,7 @@ fn main() {
     };
 
     let entries = HistoryDb::open()
-        .and_then(|db| db.list_entries(MAX_ENTRIES))
+        .and_then(|db| db.list_entries(FETCH_ALL))
         .unwrap_or_default();
 
     run_ui(entries, screenshot_req);
