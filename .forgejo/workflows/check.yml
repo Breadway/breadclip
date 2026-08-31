@@ -1,10 +1,11 @@
 name: check
 
-# Fast-fail lint/test on short-lived work branches, before it ever reaches
-# main and triggers a dev-track release build.
+# Fast-fail lint/test on short-lived work branches, and on `main` itself —
+# a push to main immediately triggers a dev-track release build, so it
+# should be linted/tested first, not shipped unchecked.
 on:
   push:
-    branches: ['feature/**', 'fix/**']
+    branches: ['feature/**', 'fix/**', 'main']
 
 jobs:
   check:

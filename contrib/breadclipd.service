@@ -11,6 +11,11 @@ ExecStart=%h/.cargo/bin/breadclipd
 Restart=on-failure
 RestartSec=2
 
+# wl-paste/wl-copy live on the user's PATH (e.g. ~/.local/bin or
+# ~/.cargo/bin via bakery/cargo install), which systemd user services don't
+# inherit by default — without this, breadclipd starts but captures nothing.
+Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+
 # Forward stdout/stderr to the journal so `journalctl --user -u breadclipd` works
 StandardOutput=journal
 StandardError=journal

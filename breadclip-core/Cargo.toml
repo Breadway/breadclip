@@ -7,8 +7,9 @@ edition = "2021"
 rusqlite = { version = "0.31", features = ["bundled"] }
 sha2 = "0.10"
 hex = "0.4"
-dirs = "5"
-bread-utils = { git = "https://git.breadway.dev/Breadway/bread-ecosystem", tag = "v0.7.2" }
+toml_edit = "0.22"
+# `toml` for bread-utils' non-destructive config load/save discipline (config.rs).
+bread-utils = { git = "https://git.breadway.dev/Breadway/bread-ecosystem", tag = "v0.7.2", features = ["toml"] }
 
 [dev-dependencies]
 tempfile = "3"
