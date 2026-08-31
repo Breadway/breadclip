@@ -21,6 +21,8 @@ per-clipboard-change process invocation, not inside a persistent loop).
 | `bread.clip.copied` | `{ "kind": "url" \| "error" \| "code" \| "path" \| "plain", "len": <bytes or chars> }` | Every successful clipboard capture (text or image — images always get `kind: "image"`). `kind` is a heuristic classification (see `breadclipd/src/content_kind.rs`), not a guarantee — don't build a security decision on it. |
 | `bread.clip.clear.done` | `{}` | `bread.command.clip.clear` was received and history was successfully cleared. |
 | `bread.clip.clear.failed` | `{ "error": "<message>" }` | `bread.command.clip.clear` was received but clearing failed (e.g. DB error). |
+| `bread.clip.pinned` | `{ "id": <entry id>, "pinned": true \| false }` | An entry was pinned or unpinned — either via `bread.command.clip.pin`, or locally from the popup's Ctrl+P toggle (which updates the DB directly; see below). |
+| `bread.clip.pin.failed` | `{ "error": "<message>" }` | `bread.command.clip.pin` was received but pinning failed (e.g. DB error, or the command was missing its `id`). |
 
 Content is never included in the payload — only its detected kind and length. History (including the actual copied content) stays local to breadclip's own SQLite database; the event bus is for *notifications about* clipboard activity, not a channel for clipboard content itself.
 
@@ -28,19 +30,27 @@ Content is never included in the payload — only its detected kind and length. 
 
 | Verb | Effect |
 |------|--------|
-| `clear` | Deletes all clipboard history (text entries and stored image files). Emits `bread.clip.clear.done`/`.failed`. |
+| `clear` | Deletes all clipboard history (text entries, stored image files, pinned entries — it's a hard reset). Emits `bread.clip.clear.done`/`.failed`. |
+| `pin` | Payload `{ "id": <entry id>, "pin": true \| false }`. Pins or unpins a history entry by id; `pin` defaults to `true` if omitted. Emits `bread.clip.pinned`/`bread.clip.pin.failed`. |
 
-### Not implemented: `pin` / `select`
+Pinned entries are exempt from the daemon's trimming and sort to the top of
+the history list. The popup's Ctrl+P toggle writes the same `pinned` column
+directly (it doesn't round-trip through the bus), and also emits
+`bread.clip.pinned`, so automation can observe either path. Entry `id`s come
+from `list_entries` — there is currently no read API on the bus for the
+history contents.
 
-An earlier draft of this integration planned `pin`/`select` verbs, but
-breadclip's history schema has no "pinned" concept at all today — there's no
-column for it, and the GTK popup UI has no corresponding affordance. Adding
-real pin/select support is a product decision for breadclip itself (does it
-want pinning, and what should the UI look like?), not something to fabricate
-as a side effect of wiring up the event bus. If/when breadclip grows that
-feature, the corresponding `bread.command.clip.pin`/`.select` verbs (and
-matching `bread.clip.pinned`/`.selected` events) should be added at the same
-time, not stubbed out ahead of it.
+### Not implemented: `select`
+
+`select` (remote-activate a row from the bus, e.g. "paste entry 42 now")
+is still deliberately not implemented: the popup is a short-lived process
+with no resident service to receive that command, and the daemon has no
+reason to talk to a transient popup. That's a real product decision for
+breadclip itself — what should "select from the bus" even mean when the
+popup isn't open? — not something to fabricate as a side effect of wiring
+up the event bus. When breadclip grows that feature, the matching
+`bread.command.clip.select` verb and `bread.clip.selected` event should be
+added at the same time.
 
 ## Fail-safe behavior
 

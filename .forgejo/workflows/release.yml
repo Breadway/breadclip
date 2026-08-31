@@ -64,9 +64,9 @@ jobs:
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
           PKG_DIR="/srv/breadway-dl/breadclip/${VERSION}"
-          gh release create "${GITHUB_REF_NAME}" --repo Breadway/breadclip \
+          gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" \
             --title "breadclip v${VERSION}" --generate-notes 2>/dev/null || true
-          gh release upload "${GITHUB_REF_NAME}" --repo Breadway/breadclip \
+          gh release upload "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" \
             "${PKG_DIR}/breadclip-x86_64" \
             "${PKG_DIR}/breadclipd-x86_64" \
             "${PKG_DIR}/breadclip-x86_64.sha256" \

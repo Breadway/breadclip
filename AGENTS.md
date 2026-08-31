@@ -51,12 +51,14 @@ Three crates:
 through `bread-screenshots`; do not rewrite it just to retarget the crate pin.
 
 `EVENTS.md` is the bread-event contract. App id `clip`. Implemented:
-`bread.clip.copied`, `bread.clip.clear.done`/`.failed`, and command
-`bread.command.clip.clear`. There is no pin/select — the history schema has
-no pinned column and the popup has no pin UI. Do not invent
-`bread.command.clip.pin`/`.select` (or matching events) ahead of a real
-product feature.
+`bread.clip.copied`, `bread.clip.clear.done`/`.failed`,
+`bread.clip.pinned`/`bread.clip.pin.failed`, and commands
+`bread.command.clip.clear` and `bread.command.clip.pin`. Pinning is real:
+the history schema has a `pinned` column, the popup has a Ctrl+P toggle, and
+trim exempts pinned rows. There is no `select` — the popup is a transient
+process with no resident service to receive `bread.command.clip.select`;
+do not invent it (or `bread.clip.selected`) ahead of a real product feature.
 
 ## Don't
 - Don't embed credentials in remote URLs — SSH or a credential helper only.
-- Don't invent pin/select on the event bus. See `EVENTS.md`.
+- Don't invent `select` on the event bus. See `EVENTS.md`.
