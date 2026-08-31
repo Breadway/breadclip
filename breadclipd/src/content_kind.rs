@@ -105,12 +105,29 @@ fn looks_like_code(text: &str) -> bool {
         })
         .count();
 
-    // Multi-line with a meaningful fraction of "code-shaped" lines, or an
-    // unambiguous single-line token (import/#include/fn signature), counts
-    // as code. A single short line of prose won't hit either bar.
-    token_hits >= 2
-        || (lines.len() > 1 && brace_or_semicolon_lines * 2 >= lines.len())
-        || (lines.len() == 1 && token_hits >= 1 && text.len() < 200)
+    // Multi-line with a meaningful fraction of "code-shaped" lines, or a
+    // couple of code tokens anywhere, counts as code.
+    if lines.len() > 1 {
+        return token_hits >= 2 || brace_or_semicolon_lines * 2 >= lines.len();
+    }
+
+    // A single line only counts as code if it actually *looks* like a code
+    // statement — a prose sentence that merely contains a keyword ("let me
+    // show you", "function of time", "class is a concept") must stay plain.
+    if lines.len() == 1 && token_hits >= 1 && text.len() < 200 {
+        let trimmed = text.trim_start();
+        let import_like = trimmed.starts_with("import ") || trimmed.starts_with("#include");
+        let code_shaped = trimmed.ends_with('{')
+            || trimmed.ends_with('}')
+            || trimmed.ends_with(';')
+            || trimmed.ends_with('(')
+            || trimmed.ends_with(')')
+            || trimmed.contains("=>")
+            || (trimmed.contains('(') && trimmed.contains(')'))
+            || trimmed.contains(" = ");
+        return import_like || code_shaped;
+    }
+    false
 }
 
 #[cfg(test)]
@@ -168,6 +185,15 @@ mod tests {
     #[test]
     fn detects_single_line_import() {
         assert_eq!(detect("import numpy as np"), "code");
+    }
+
+    #[test]
+    fn single_line_prose_containing_a_keyword_is_plain() {
+        assert_eq!(detect("let me show you something"), "plain");
+        assert_eq!(detect("function of time"), "plain");
+        assert_eq!(detect("class is a concept"), "plain");
+        assert_eq!(detect("const means constant"), "plain");
+        assert_eq!(detect("def is short for define"), "plain");
     }
 
     #[test]
