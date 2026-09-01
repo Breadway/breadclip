@@ -18,3 +18,6 @@ gtk4-layer-shell = "0.8"
 serde_json = "1"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
+# Subscriber for the `tracing` events bread-theme / bread-utils emit — without
+# one they're silently dropped. env-filter for RUST_LOG.
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
