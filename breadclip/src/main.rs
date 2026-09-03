@@ -226,7 +226,15 @@ fn run_ui(entries: Vec<ClipEntry>, screenshot_req: Option<screenshot::Screenshot
 
         // Full-screen transparent overlay; panel widget is positioned inside it.
         let window = bread_utils::gtk_popup::new_overlay_window(app, "breadclip");
-        bread_theme::gtk::bind_window_auto(&window);
+        // Bind the *app* sheet, not just the shared one. `bind_window_auto`
+        // alone re-broadcasts the shared component sheet — including
+        // `window { background-color: @bg }` — at USER-10, which outranks the
+        // APPLICATION-priority `window { background-color: transparent }` here
+        // regardless of selector specificity: the "transparent overlay" then
+        // paints a solid @bg rectangle over the whole screen (worst under a
+        // VM's software renderer). `_with_app_css` rides our sheet at USER-9.
+        // Same fix as breadbox.
+        bread_theme::gtk::bind_window_auto_with_app_css(&window, css::build_css);
 
         let panel_width = breadclip_core::config::load().panel_width;
         let panel = GBox::new(Orientation::Vertical, 0);
@@ -524,6 +532,17 @@ fn run_ui(entries: Vec<ClipEntry>, screenshot_req: Option<screenshot::Screenshot
 // ---- Main -------------------------------------------------------------------
 
 fn main() {
+    // Surface `tracing::warn!`/`error!` from bread-theme / bread-utils —
+    // dropped silently before (no subscriber). `RUST_LOG` overrides; default
+    // is warn+ so a normal popup stays quiet.
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
+        )
+        .with_writer(std::io::stderr)
+        .init();
+
     use clap::Parser;
     let cli = screenshot::Cli::parse();
     let screenshot_req = cli.screenshot_request();
