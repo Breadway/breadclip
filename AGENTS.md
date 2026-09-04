@@ -20,7 +20,7 @@ When starting work on a new feature, create branch `feature/<feature-name>`.
 When working on a bug or issue, create branch `fix/<issue you are fixing>`.
 
 ## Remotes
-- `origin` — Forgejo (`git.breadway.dev` via Hestia, SSH) — authoritative.
+- `origin` — Forgejo (`git.breadway.dev`, SSH) — authoritative.
 - `github` — GitHub mirror. Push `origin` only; GitHub auto-mirrors.
 
 ## CI
@@ -29,7 +29,7 @@ When working on a bug or issue, create branch `fix/<issue you are fixing>`.
 - `rc-release.yml` — triggers on `vX.Y.Z-rc.N` tag push.
 - `release.yml` — triggers on any other `v*` tag push.
 
-All four run on a self-hosted runner (`hestia`) inside a pinned Arch
+All four run on a self-hosted runner inside a pinned Arch
 container — not the host's native environment. The Containerfile/build
 script are shared across bread-ecosystem products and live in
 `bread-ecosystem/ci/`; this repo's `ci/build.sh` clones that repo at the
