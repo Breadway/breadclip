@@ -19,7 +19,7 @@ use std::{
 };
 
 // Pinned entries are exempt from trimming, so the fetch limit can't be
-// derived from the retention caps alone. History stays tiny in practice —
+// derived from the retention caps alone. History stays tiny in practice:
 // fetching it all keeps every pinned row reachable regardless of count.
 const FETCH_ALL: usize = 10_000;
 const PANEL_GAP: i32 = 8; // gap between focused window bottom and panel top
@@ -123,7 +123,7 @@ fn build_row(entry: &ClipEntry) -> gtk4::ListBoxRow {
         type_lbl.set_xalign(0.0);
         hbox.append(&type_lbl);
     } else {
-        // Text preview — first line, truncated
+        // Text preview: first line, truncated
         let preview = entry
             .content
             .as_deref()
@@ -149,7 +149,7 @@ fn build_row(entry: &ClipEntry) -> gtk4::ListBoxRow {
         let pin_lbl = Label::new(Some("★"));
         pin_lbl.add_css_class("clip-meta");
         pin_lbl.add_css_class("clip-pinned");
-        pin_lbl.set_tooltip_text(Some("Pinned — Ctrl+P toggles"));
+        pin_lbl.set_tooltip_text(Some("Pinned: Ctrl+P toggles"));
         hbox.append(&pin_lbl);
     }
     if entry.is_primary {
@@ -171,7 +171,7 @@ fn build_row(entry: &ClipEntry) -> gtk4::ListBoxRow {
 
 fn do_copy(entry: &ClipEntry) {
     if entry.mime_type.starts_with("image/") {
-        // Re-paste with the same type we stored — a JPEG row must be offered
+        // Re-paste with the same type we stored: a JPEG row must be offered
         // as image/jpeg, not relabeled as image/png.
         if let Some(ref path) = entry.image_path {
             if let Ok(file) = fs::File::open(path) {
@@ -202,7 +202,7 @@ fn do_copy(entry: &ClipEntry) {
 // ---- UI ---------------------------------------------------------------------
 
 fn run_ui(entries: Vec<ClipEntry>, screenshot_req: Option<screenshot::ScreenshotRequest>) {
-    // Live snapshot of the entries backing the list — pinning re-reads the
+    // Live snapshot of the entries backing the list: pinning re-reads the
     // DB (pinned rows sort first) and rebuilds the rows from this. Built
     // outside connect_activate because that handler is `Fn` (runs once per
     // activation) and can't consume the entries vector.
@@ -227,8 +227,8 @@ fn run_ui(entries: Vec<ClipEntry>, screenshot_req: Option<screenshot::Screenshot
         // Full-screen transparent overlay; panel widget is positioned inside it.
         let window = bread_utils::gtk_popup::new_overlay_window(app, "breadclip");
         // Bind the *app* sheet, not just the shared one. `bind_window_auto`
-        // alone re-broadcasts the shared component sheet — including
-        // `window { background-color: @bg }` — at USER-10, which outranks the
+        // alone re-broadcasts the shared component sheet (including
+        // `window { background-color: @bg }`) at USER-10, which outranks the
         // APPLICATION-priority `window { background-color: transparent }` here
         // regardless of selector specificity: the "transparent overlay" then
         // paints a solid @bg rectangle over the whole screen (worst under a
@@ -318,7 +318,7 @@ fn run_ui(entries: Vec<ClipEntry>, screenshot_req: Option<screenshot::Screenshot
 
             // Prefer anchoring below the window, but flip above it when there
             // isn't enough room underneath (e.g. a maximized/tiled window
-            // with a text box near the bottom of the screen) — otherwise the
+            // with a text box near the bottom of the screen); otherwise the
             // panel gets pushed off-screen and never becomes visible.
             let space_below = (mon_y + mon_h) - (win.y() + win.height() + PANEL_GAP);
             let space_above = win.y() - mon_y - PANEL_GAP;
@@ -532,7 +532,7 @@ fn run_ui(entries: Vec<ClipEntry>, screenshot_req: Option<screenshot::Screenshot
 // ---- Main -------------------------------------------------------------------
 
 fn main() {
-    // Surface `tracing::warn!`/`error!` from bread-theme / bread-utils —
+    // Surface `tracing::warn!`/`error!` from bread-theme / bread-utils:
     // dropped silently before (no subscriber). `RUST_LOG` overrides; default
     // is warn+ so a normal popup stays quiet.
     tracing_subscriber::fmt()
@@ -547,13 +547,13 @@ fn main() {
     let cli = screenshot::Cli::parse();
     let screenshot_req = cli.screenshot_request();
 
-    // `toggle_or_kill` kills whatever's holding the single-instance lock —
+    // `toggle_or_kill` kills whatever's holding the single-instance lock:
     // a real, already-running breadclip included. A screenshot run must
     // never touch it: it's a separate, disposable instance by design (same
     // reasoning as breadbar's `allow_multiple_instances`), not a toggle of
     // the operator's real clipboard panel.
     //
-    // Kept alive for the rest of `main` — dropping it releases the
+    // Kept alive for the rest of `main`: dropping it releases the
     // single-instance lock and removes the pid file, which happens
     // naturally once `run_ui` returns (after the window closes).
     let _singleton_guard = if screenshot_req.is_some() {

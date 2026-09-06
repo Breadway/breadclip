@@ -15,7 +15,7 @@ pub fn build_css(p: &Palette) -> String {
     //
     // Row colours are set on `.clip-row` (not the shared `row` selector) so
     // they override the shared `row:selected { background: @accent }` rule and
-    // use the muted surface tone instead — consistent with breadbox.
+    // use the muted surface tone instead, consistent with breadbox.
     format!(
         "window {{ background-color: transparent; }}\
          .clip-panel {{\

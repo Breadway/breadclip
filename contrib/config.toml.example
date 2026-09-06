@@ -1,4 +1,4 @@
-# breadclip configuration — copy to
+# breadclip configuration: copy to
 #   $XDG_CONFIG_HOME/breadclip/config.toml   (usually ~/.config/breadclip/config.toml)
 #
 # Every key is optional; a missing file, missing key, or out-of-range value

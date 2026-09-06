@@ -11,13 +11,13 @@ path = "src/main.rs"
 breadclip-core = { path = "../breadclip-core" }
 bread-theme = { git = "https://git.breadway.dev/Breadway/bread-ecosystem", tag = "v0.7.4", features = ["gtk"] }
 bread-utils = { git = "https://git.breadway.dev/Breadway/bread-ecosystem", tag = "v0.7.2", features = ["gtk"] }
-# Capture primitives for `--screenshot` mode — see src/screenshot.rs.
+# Capture primitives for `--screenshot` mode (see src/screenshot.rs).
 bread-screenshots = { git = "https://git.breadway.dev/Breadway/bread-ecosystem", tag = "v0.7.2" }
 gtk4 = { version = "0.11", features = ["v4_12"] }
 gtk4-layer-shell = "0.8"
 serde_json = "1"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
-# Subscriber for the `tracing` events bread-theme / bread-utils emit — without
+# Subscriber for the `tracing` events bread-theme / bread-utils emit: without
 # one they're silently dropped. env-filter for RUST_LOG.
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

@@ -1,7 +1,7 @@
 //! Heuristic classification of clipboard text, used to tag the
 //! `bread.clip.copied` event's `kind` field (see `bread-shared`'s namespace
 //! docs). Deliberately simple pattern matching, not a real parser or ML
-//! classifier — good enough to auto-tag "you just copied a stack trace" or
+//! classifier: good enough to auto-tag "you just copied a stack trace" or
 //! "you just copied a URL" for a Lua automation module to react to, not a
 //! source of truth anyone should build a security decision on.
 
@@ -27,7 +27,7 @@ pub fn detect(text: &str) -> &'static str {
 }
 
 fn looks_like_url(text: &str) -> bool {
-    // Single "word" (no internal whitespace) is required — a sentence that
+    // Single "word" (no internal whitespace) is required: a sentence that
     // merely contains a URL should classify as plain/error/code on its own
     // merits, not get tagged "url" just because a link appears in it.
     if text.split_whitespace().count() != 1 {
@@ -112,7 +112,7 @@ fn looks_like_code(text: &str) -> bool {
     }
 
     // A single line only counts as code if it actually *looks* like a code
-    // statement — a prose sentence that merely contains a keyword ("let me
+    // statement: a prose sentence that merely contains a keyword ("let me
     // show you", "function of time", "class is a concept") must stay plain.
     if lines.len() == 1 && token_hits >= 1 && text.len() < 200 {
         let trimmed = text.trim_start();
