@@ -1,5 +1,5 @@
 //! `--screenshot` CLI mode: render breadclip's clipboard-history panel,
-//! capture it via `bread-screenshots`, then exit — driven by
+//! capture it via `bread-screenshots`, then exit, driven by
 //! `bread-ecosystem`'s `bread-capture` orchestrator, or run standalone for
 //! one-off captures.
 //!
@@ -9,7 +9,7 @@
 //! known-size canvas capture is the simplest reliable option. In screenshot
 //! mode there's never a focused window to anchor the panel next to (see
 //! `bread_utils::hypr::active_window` in `main.rs`, which the isolated
-//! capture environment always reports `None` for — deliberately, see
+//! capture environment always reports `None` for, deliberately, see
 //! `bread-capture`'s isolation module), so the panel always falls back to
 //! centered, which is exactly what we want for a consistent screenshot.
 
@@ -30,12 +30,12 @@ pub struct Cli {
     #[arg(long)]
     pub output: Option<PathBuf>,
 
-    /// Capture canvas width — matches the isolated compositor's output width
+    /// Capture canvas width: matches the isolated compositor's output width
     /// (`bread-capture --isolate-width`).
     #[arg(long, default_value_t = DEFAULT_WIDTH)]
     pub width: u32,
 
-    /// Capture canvas height — see `width`.
+    /// Capture canvas height (see `width`).
     #[arg(long, default_value_t = DEFAULT_HEIGHT)]
     pub height: u32,
 }
@@ -67,7 +67,7 @@ impl Cli {
 }
 
 /// Wire up the given view's screenshot sequence against an already-built,
-/// not-yet-presented window. Every path here ends by exiting the process —
+/// not-yet-presented window. Every path here ends by exiting the process;
 /// it never returns control to the normal history-panel UI.
 pub fn dispatch(window: &gtk4::ApplicationWindow, req: ScreenshotRequest) {
     match req.view.as_str() {

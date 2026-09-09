@@ -3,7 +3,7 @@
 //! The password-manager path (`CLIPBOARD_STATE=sensitive` / the
 //! `x-kde-passwordManagerHint` MIME type) only catches copies an app
 //! deliberately flagged. These rules catch copies that *look* like secrets
-//! even when the app didn't flag them — one-time codes, credit card
+//! even when the app didn't flag them: one-time codes, credit card
 //! numbers, private keys, credential lines. They are deliberately
 //! conservative (a false "skip" is cheaper than a leaked password) and they
 //! are a convenience, not a security boundary: the 0600 file permissions
@@ -47,7 +47,7 @@ fn looks_like_credential_line(text: &str) -> bool {
 }
 
 /// A one-time code: a short copy that mentions a code keyword and contains
-/// a 6–8 digit run. A *bare* 6-digit number is deliberately not flagged —
+/// a 6–8 digit run. A *bare* 6-digit number is deliberately not flagged:
 /// too many legitimate numbers have that shape.
 fn looks_like_otp(text: &str) -> bool {
     if text.len() > 60 {

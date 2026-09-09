@@ -8,7 +8,7 @@ use serde_json::Value;
 use std::{env, io::Read, process::Command, thread, time::Duration};
 
 /// This app's id in bread's sibling-app namespace registry
-/// (`bread_shared::apps::KNOWN_APPS`) — events are published as
+/// (`bread_shared::apps::KNOWN_APPS`): events are published as
 /// `bread.clip.*`, commands are received on `bread.command.clip.*`.
 const APP_ID: &str = "clip";
 
@@ -24,14 +24,14 @@ const PRIMARY_FLAG: &str = "--primary";
 /// MIME type convention (originating with KDE's Klipper) that password
 /// managers such as KeePassXC and Bitwarden set on clipboard content they
 /// own, signaling "don't persist this". Only reachable on the fallback
-/// capture path — when invoked through `wl-paste --watch`, `CLIPBOARD_STATE`
+/// capture path: when invoked through `wl-paste --watch`, `CLIPBOARD_STATE`
 /// carries the same information from the same event (see `capture_once`).
 const PASSWORD_HINT_MIME: &str = "x-kde-passwordManagerHint";
 
 /// Build a `wl-paste` command with a hard deadline. Without the timeout, a
 /// stalled selection offer (source app died mid-transfer, compositor never
 /// completes the handoff) leaves `wl-paste` blocked forever reading a pipe
-/// that never closes — and a forever-blocked fallback capture would eat a
+/// that never closes, and a forever-blocked fallback capture would eat a
 /// file descriptor per event over a long session. `timeout -k` guarantees a
 /// SIGKILL if the initial SIGTERM doesn't land. Only used by the manual
 /// fallback path (`capture_via_wl_paste`); the `--watch` path reads the
@@ -94,7 +94,7 @@ fn get_clipboard_text(primary: bool) -> Option<String> {
 
 /// Identify an image payload by its magic bytes. `wl-paste --watch` hands us
 /// the content on stdin without saying which offered type it picked, so the
-/// bytes are the only reliable signal — and they're exact, because watch
+/// bytes are the only reliable signal, and they're exact, because watch
 /// mode never appends a trailing newline.
 fn sniff_image_mime(bytes: &[u8]) -> Option<&'static str> {
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
@@ -169,7 +169,7 @@ fn capture_via_wl_paste(primary: bool) {
 
     if types.iter().any(|t| t == PASSWORD_HINT_MIME) {
         // Password manager (KeePassXC, Bitwarden, etc.) marked this copy as
-        // sensitive via the x-kde-passwordManagerHint convention — never
+        // sensitive via the x-kde-passwordManagerHint convention: never
         // persist it.
         return;
     }
@@ -197,14 +197,14 @@ fn capture_via_wl_paste(primary: bool) {
 
 /// Invoked once per clipboard-change event (as the handler command for
 /// `wl-paste --watch`). Stores a text or image entry to the history DB,
-/// unless the selection was flagged as sensitive — in which case nothing is
+/// unless the selection was flagged as sensitive, in which case nothing is
 /// ever persisted.
 fn capture_once(primary: bool) {
     match env::var(CLIPBOARD_STATE).as_deref() {
         // Password manager (KeePassXC, Bitwarden, ...) flagged this selection
-        // as sensitive via `wl-copy --sensitive` — never persist it.
+        // as sensitive via `wl-copy --sensitive`: never persist it.
         Ok("sensitive") => {}
-        // Empty clipboard (nil) or an explicit clear — nothing to store.
+        // Empty clipboard (nil) or an explicit clear: nothing to store.
         Ok("nil") | Ok("clear") => {}
         Ok("data") => capture_from_stdin(primary),
         // Unset or unrecognized: not invoked by `--watch`. Fall back to the
@@ -215,7 +215,7 @@ fn capture_once(primary: bool) {
 
 /// Publishes `bread.clip.copied` into the bread event fabric. Fire-and-forget
 /// and non-fatal by design (`BreadClient::emit` never blocks or errors this
-/// caller) — breadd being absent or not installed must never affect
+/// caller): breadd being absent or not installed must never affect
 /// breadclip's own clipboard-history functionality, only mean this one
 /// notification doesn't go anywhere.
 fn emit_copied(kind: &str, len: usize) {
@@ -226,14 +226,14 @@ fn emit_copied(kind: &str, len: usize) {
 }
 
 /// Reacts to `bread.command.clip.*` verbs. Only `clear` and `pin` map to
-/// real, existing breadclip functionality today — `select` would need a
+/// real, existing breadclip functionality today: `select` would need a
 /// "remote-activate a row" concept the popup doesn't expose over the bus,
 /// which is a real product decision for breadclip itself, not something to
 /// fabricate as a side effect of wiring up the event bus. See
 /// `breadclip/EVENTS.md` for the honest current status.
 ///
 /// Emits `bread.clip.<verb>.done`/`bread.clip.pinned`/`.failed` per the
-/// confirmation convention in bread's Documentation.md — a module that
+/// confirmation convention in bread's Documentation.md: a module that
 /// started this command via `bread.wait`/`bread.wait_any` can await the real
 /// outcome instead of assuming success the moment it publishes the command.
 fn handle_command(event_name: &str, data: &Value) {
@@ -298,7 +298,7 @@ fn restart_delay(consecutive_failures: u32) -> Duration {
     Duration::from_secs((2u64 << consecutive_failures.saturating_sub(1).min(4)).min(30))
 }
 
-/// Log a watch-loop restart, but only on state changes — the first failure
+/// Log a watch-loop restart, but only on state changes: the first failure
 /// announces it, then every 8th attempt. Otherwise a persistent failure
 /// would spam the journal every two seconds forever.
 fn log_restart(what: &str, detail: &str, attempt: u32) {
@@ -320,7 +320,7 @@ fn watch_loop(exe: std::path::PathBuf, primary: bool) {
     let mut consecutive_failures: u32 = 0;
     loop {
         // `wl-paste --watch <cmd>` runs <cmd> once per selection-change
-        // event instead of polling — zero idle cost between changes, and no
+        // event instead of polling: zero idle cost between changes, and no
         // forking wl-paste repeatedly. Each event re-invokes this same
         // binary with --capture-once to do a single read-and-store pass.
         let mut cmd = Command::new("wl-paste");
@@ -370,7 +370,7 @@ fn main() {
         }
     };
 
-    // Wait briefly for WAYLAND_DISPLAY — common when started early in the session
+    // Wait briefly for WAYLAND_DISPLAY, common when started early in the session
     let mut retries = 0;
     while env::var("WAYLAND_DISPLAY").is_err() && retries < 20 {
         thread::sleep(Duration::from_millis(500));
@@ -401,7 +401,7 @@ fn main() {
 
     // Long-lived, so this uses BreadClient::subscribe (a persistent
     // background thread with its own reconnect/backoff loop) rather than a
-    // one-shot connection — the same client type capture_once() uses for
+    // one-shot connection: the same client type capture_once() uses for
     // `emit`, just the other half of it. breadd being absent or restarting
     // is transparent here too: the subscription just quietly stops
     // delivering commands until it reconnects.
@@ -432,7 +432,7 @@ mod tests {
 
     // Isolates HistoryDb::open() to a fresh temp dir per test. `cargo test`
     // runs tests in parallel threads within one process by default, and
-    // `XDG_DATA_HOME` is process-global — three tests in this module all
+    // `XDG_DATA_HOME` is process-global: three tests in this module all
     // set it, so without this lock they race each other (confirmed: an
     // earlier version of this file had that exact bug, caught by a flaky
     // `len() == 2` instead of `1` failure).
@@ -467,7 +467,7 @@ mod tests {
     #[test]
     fn handle_command_clear_empties_history_even_with_no_daemon_reachable() {
         // The point of this test: handle_command's actual effect (clearing
-        // the DB) must not depend on breadd being reachable — `emit` inside
+        // the DB) must not depend on breadd being reachable: `emit` inside
         // it is fire-and-forget and must never gate the real work. No test
         // daemon is running here, so if clearing the DB were accidentally
         // made contingent on the emit succeeding, this test would fail.
@@ -540,7 +540,7 @@ mod tests {
             let db = HistoryDb::open().expect("open history db");
             db.insert_text("should survive", CaptureSource::Clipboard).unwrap();
 
-            // Not a `bread.command.clip.*` event at all — must be a no-op.
+            // Not a `bread.command.clip.*` event at all: must be a no-op.
             handle_command("bread.command.pad.clear", &serde_json::json!({}));
             handle_command("bread.clip.copied", &serde_json::json!({}));
 

@@ -126,7 +126,7 @@ impl HistoryDb {
         let db_path = dir.join("history.db");
         let conn = Connection::open(&db_path)?;
         // Clipboard events can spawn overlapping `--capture-once` processes
-        // and the popup opens the same DB — without a busy timeout a writer
+        // and the popup opens the same DB: without a busy timeout a writer
         // can hit SQLITE_BUSY and silently drop a capture.
         conn.busy_timeout(Duration::from_secs(5))?;
         // WAL: concurrent readers (popup) and the single writer (daemon) no
@@ -178,7 +178,7 @@ impl HistoryDb {
 
     /// Store an image. `mime_type` is persisted with the row and drives the
     /// file extension, so a JPEG capture is stored as a `.jpg` offered as
-    /// `image/jpeg` — not silently re-encoded/relabeled as PNG.
+    /// `image/jpeg`, not silently re-encoded/relabeled as PNG.
     pub fn insert_image(
         &self,
         bytes: &[u8],
@@ -226,7 +226,7 @@ impl HistoryDb {
     }
 
     pub fn list_entries(&self, limit: usize) -> Result<Vec<ClipEntry>, HistoryError> {
-        // Pinned rows first, then `timestamp DESC, id DESC` — many copies
+        // Pinned rows first, then `timestamp DESC, id DESC`: many copies
         // land within the same second, and the `id` tiebreaker keeps that
         // order (and therefore which rows trim keeps) deterministic.
         let mut stmt = self.conn.prepare(
@@ -250,7 +250,7 @@ impl HistoryDb {
         Ok(rows)
     }
 
-    /// Deletes every history entry and every stored image file — a hard
+    /// Deletes every history entry and every stored image file: a hard
     /// reset that clears pinned entries too. Used by the
     /// `bread.command.clip.clear` handler (see breadclipd's bread-client
     /// subscription) as well as anything else that wants a full wipe.
@@ -264,7 +264,7 @@ impl HistoryDb {
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             paths
         };
-        // Delete rows first, then files — the reverse order would leave rows
+        // Delete rows first, then files: the reverse order would leave rows
         // pointing at already-removed files if the DELETE failed halfway.
         self.conn.execute("DELETE FROM history", [])?;
         for path in image_paths {
@@ -274,7 +274,7 @@ impl HistoryDb {
     }
 
     pub fn delete_entry(&self, id: i64) -> Result<(), HistoryError> {
-        // Clean up image file if present — after the row is gone, so a
+        // Clean up image file if present, after the row is gone, so a
         // failed DELETE never leaves a row pointing at a deleted file.
         let image_path: Option<String> = self
             .conn
@@ -309,7 +309,7 @@ impl HistoryDb {
         };
         let images_dir = data_dir().join("images");
         let Ok(entries) = std::fs::read_dir(&images_dir) else {
-            return Ok(()); // no images dir yet — nothing to sweep
+            return Ok(()); // no images dir yet: nothing to sweep
         };
         let cutoff = std::time::SystemTime::now()
             .checked_sub(Duration::from_secs(3600))
@@ -332,7 +332,7 @@ impl HistoryDb {
 
     fn trim(&self) -> Result<(), HistoryError> {
         // Oldest non-pinned text rows beyond the cap. Pinned rows are never
-        // trimmed — that's the point of pinning them.
+        // trimmed; that's the point of pinning them.
         self.conn.execute(
             "DELETE FROM history
              WHERE mime_type = 'text/plain' AND pinned = 0
@@ -343,7 +343,7 @@ impl HistoryDb {
             [self.retention.text as i64],
         )?;
         // Collect the image files that are about to be trimmed, delete the
-        // rows first, then the files — so a failed DELETE never leaves rows
+        // rows first, then the files, so a failed DELETE never leaves rows
         // pointing at already-removed files. `LIKE 'image/%'` covers every
         // image mime type (png, jpeg, and anything added later).
         let old_paths: Vec<String> = {
@@ -414,7 +414,7 @@ fn restrict_dir(path: &Path, mode: u32) {
     }
 }
 
-/// Write an image file, created 0600 from the very first syscall — no window
+/// Write an image file, created 0600 from the very first syscall: no window
 /// where a clipboard image (possibly a screenshot with sensitive pixels) is
 /// world-readable before a chmod lands, and no dependence on the umask.
 fn write_image_file(path: &Path, bytes: &[u8]) -> Result<(), HistoryError> {
@@ -429,7 +429,7 @@ fn write_image_file(path: &Path, bytes: &[u8]) -> Result<(), HistoryError> {
             path: path.to_path_buf(),
             source,
         }),
-        // Same hash filename means identical content — a concurrent
+        // Same hash filename means identical content: a concurrent
         // `--capture-once` already wrote it.
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
         Err(source) => Err(HistoryError::Io {
@@ -447,8 +447,8 @@ pub fn sha256_hex(data: &[u8]) -> String {
 }
 
 pub fn data_dir() -> PathBuf {
-    // Was `dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("~/.local/share"))`
-    // — PathBuf/std::fs never expand `~`, so on the rare box where `dirs`
+    // Was `dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("~/.local/share"))`:
+    // PathBuf/std::fs never expand `~`, so on the rare box where `dirs`
     // can't resolve a home directory, that fallback silently resolved to a
     // directory literally named `~` under the current working directory
     // instead of the user's actual home. bread_utils::xdg resolves a real
@@ -464,7 +464,7 @@ fn unix_now() -> i64 {
 }
 
 /// Serializes tests that redirect `$XDG_DATA_HOME`/`$XDG_CONFIG_HOME`
-/// (process-global env vars) against each other — `cargo test` runs tests
+/// (process-global env vars) against each other: `cargo test` runs tests
 /// in parallel threads within one process.
 #[cfg(test)]
 pub(crate) fn env_test_lock() -> &'static std::sync::Mutex<()> {

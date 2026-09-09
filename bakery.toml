@@ -1,5 +1,5 @@
 name = "breadclip"
-description = "Wayland clipboard history manager for Hyprland — daemon + GTK4 popup"
+description = "Wayland clipboard history manager for Hyprland (daemon + GTK4 popup)"
 binaries = ["breadclip", "breadclipd"]
 system_deps = ["gtk4", "gtk4-layer-shell", "wl-clipboard"]
 optional_system_deps = ["hyprland"]
