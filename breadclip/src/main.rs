@@ -16,6 +16,7 @@ use std::{
     io::Write,
     process::{Command, Stdio},
     rc::Rc,
+    time::Duration,
 };
 
 // Pinned entries are exempt from trimming, so the fetch limit can't be
@@ -26,6 +27,14 @@ const PANEL_GAP: i32 = 8; // gap between focused window bottom and panel top
 // Fallback panel height, used only if measuring the panel before it's shown
 // reports nothing sensible.
 const PANEL_HEIGHT_ESTIMATE: i32 = 580;
+// The popup is a layer-shell surface with KeyboardMode::Exclusive (needed so
+// Escape/Enter/arrow keys reach it instead of the client behind it), and
+// Hyprland does not hand keyboard focus back to whatever was focused before
+// the surface unmaps. The unmap itself is a Wayland round-trip that hasn't
+// necessarily finished by the time our own `window.close()` call returns,
+// so the explicit refocus dispatch (see `close_all` in `run_ui`) is fired
+// after a short delay rather than immediately.
+const REFOCUS_DELAY_MS: u64 = 80;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Filter {
@@ -55,6 +64,19 @@ fn format_timestamp(ts: i64) -> String {
 
 fn get_row_entry(row: &gtk4::ListBoxRow) -> Option<ClipEntry> {
     unsafe { row.data::<ClipEntry>("entry").map(|p| p.as_ref().clone()) }
+}
+
+/// The Hyprland client address (e.g. `"0x55f2..."`) of whatever window is
+/// focused right now. Must be queried before the popup grabs keyboard focus
+/// (i.e. before `window.present()`), same timing constraint as
+/// `bread_utils::hypr::active_window()`. `ActiveWindow` doesn't carry this
+/// field, it only exposes what panel positioning needs, so this reads the
+/// raw JSON directly instead of extending that shared type for one caller.
+fn focused_window_address() -> Option<String> {
+    bread_utils::hypr::request_json("j/activewindow")?
+        .get("address")?
+        .as_str()
+        .map(str::to_string)
 }
 
 fn entry_matches(entry: &ClipEntry, query: &str, filter: Filter) -> bool {
@@ -303,6 +325,9 @@ fn run_ui(entries: Vec<ClipEntry>, screenshot_req: Option<screenshot::Screenshot
         // Otherwise, centre the panel on screen.
         let active_win = bread_utils::hypr::active_window();
         let monitor = bread_utils::hypr::focused_monitor();
+        // Captured now, before `window.present()` below hands keyboard
+        // focus to this popup, see `close_all`'s use of it.
+        let refocus_address = focused_window_address();
         if let Some(ref win) = active_win {
             let (mon_x, mon_y, mon_w, mon_h) = monitor
                 .as_ref()
@@ -346,8 +371,27 @@ fn run_ui(entries: Vec<ClipEntry>, screenshot_req: Option<screenshot::Screenshot
 
         let close_all: Rc<dyn Fn()> = Rc::new({
             let w = window.clone();
+            let app = app.clone();
+            let refocus_address = refocus_address.clone();
             move || {
                 w.close();
+                if let Some(addr) = refocus_address.clone() {
+                    // `app.hold()` keeps the process alive for the delay
+                    // below: this popup is the app's only window, and GTK
+                    // would otherwise quit the instant it closes, before
+                    // the timeout ever fires. Dropping the guard inside the
+                    // callback releases the hold once the dispatch is sent.
+                    let hold = app.hold();
+                    glib::timeout_add_local_once(
+                        Duration::from_millis(REFOCUS_DELAY_MS),
+                        move || {
+                            let _ = bread_utils::hypr::request(&format!(
+                                "dispatch focuswindow address:{addr}"
+                            ));
+                            drop(hold);
+                        },
+                    );
+                }
             }
         });
 
