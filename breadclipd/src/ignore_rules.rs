@@ -8,19 +8,85 @@
 //! conservative (a false "skip" is cheaper than a leaked password) and they
 //! are a convenience, not a security boundary: the 0600 file permissions
 //! and 0700 data dir are the real protection.
+//!
+//! The `[ignore]` section of `config.toml` layers user overrides on top:
+//! extra regex `patterns` to treat as sensitive, and built-in rule names to
+//! `disable` when a heuristic trips on something the user genuinely wants
+//! kept. An absent section leaves the built-in behaviour exactly as before.
 
-/// Would persisting this text be a bad idea? Skipped copies never reach the
-/// database (or the event bus), like the password-manager path.
-pub fn is_sensitive(text: &str) -> bool {
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return false;
+use breadclip_core::config::IgnoreConfig;
+use regex::Regex;
+use std::collections::HashSet;
+
+/// The built-in heuristics, by the name used in `[ignore] disable`.
+pub const BUILTIN_RULES: [&str; 5] = [
+    "private_key",
+    "credential_line",
+    "otp",
+    "card_number",
+    "api_token",
+];
+
+/// The built-in heuristics plus any user overrides from `[ignore]`.
+/// `Ruleset::default()` is the built-in heuristic with nothing changed.
+#[derive(Default)]
+pub struct Ruleset {
+    extra: Vec<Regex>,
+    disabled: HashSet<String>,
+}
+
+impl Ruleset {
+    /// Compile the user's `[ignore]` overrides. An invalid regex or an
+    /// unknown rule name is logged to stderr and skipped rather than
+    /// failing the capture.
+    pub fn from_config(cfg: &IgnoreConfig) -> Self {
+        let mut extra = Vec::new();
+        for pat in &cfg.patterns {
+            match Regex::new(pat) {
+                Ok(re) => extra.push(re),
+                Err(e) => {
+                    eprintln!("breadclipd: ignoring invalid [ignore] pattern {pat:?}: {e}")
+                }
+            }
+        }
+        let mut disabled = HashSet::new();
+        for name in &cfg.disable {
+            if BUILTIN_RULES.contains(&name.as_str()) {
+                disabled.insert(name.clone());
+            } else {
+                eprintln!(
+                    "breadclipd: unknown [ignore] disable rule {name:?} (valid: {})",
+                    BUILTIN_RULES.join(", ")
+                );
+            }
+        }
+        Self { extra, disabled }
     }
-    looks_like_private_key(trimmed)
-        || looks_like_credential_line(trimmed)
-        || looks_like_otp(trimmed)
-        || contains_card_number(trimmed)
-        || contains_api_token(trimmed)
+
+    fn on(&self, rule: &str) -> bool {
+        !self.disabled.contains(rule)
+    }
+
+    /// Would persisting this text be a bad idea? Skipped copies never reach
+    /// the database (or the event bus), like the password-manager path.
+    pub fn is_sensitive(&self, text: &str) -> bool {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return false;
+        }
+        (self.on("private_key") && looks_like_private_key(trimmed))
+            || (self.on("credential_line") && looks_like_credential_line(trimmed))
+            || (self.on("otp") && looks_like_otp(trimmed))
+            || (self.on("card_number") && contains_card_number(trimmed))
+            || (self.on("api_token") && contains_api_token(trimmed))
+            || self.extra.iter().any(|re| re.is_match(trimmed))
+    }
+}
+
+/// The built-in heuristic with no user overrides.
+#[cfg(test)]
+pub fn is_sensitive(text: &str) -> bool {
+    Ruleset::default().is_sensitive(text)
 }
 
 /// PEM/OpenSSH private key blocks (and PGP blocks, which are just as
@@ -178,5 +244,50 @@ mod tests {
         assert!(!is_sensitive("just a normal sentence someone copied"));
         assert!(!is_sensitive("here is the plan for next week"));
         assert!(!is_sensitive("the password field in the form is empty"));
+    }
+
+    fn ruleset(patterns: &[&str], disable: &[&str]) -> Ruleset {
+        Ruleset::from_config(&IgnoreConfig {
+            patterns: patterns.iter().map(|s| s.to_string()).collect(),
+            disable: disable.iter().map(|s| s.to_string()).collect(),
+        })
+    }
+
+    #[test]
+    fn default_ruleset_matches_the_builtin_heuristic() {
+        let rs = Ruleset::default();
+        assert!(rs.is_sensitive("OTP: 12345678"));
+        assert!(!rs.is_sensitive("just a normal sentence someone copied"));
+    }
+
+    #[test]
+    fn extra_patterns_flag_otherwise_plain_text() {
+        let rs = ruleset(&[r"^ACME-\d{4,}\b"], &[]);
+        assert!(rs.is_sensitive("ACME-4821 is the internal ticket"));
+        assert!(!rs.is_sensitive("ACME-42 is too short"));
+        // built-ins still apply alongside the extra pattern
+        assert!(rs.is_sensitive("password: hunter2"));
+    }
+
+    #[test]
+    fn disabling_a_builtin_rule_relaxes_just_that_rule() {
+        let rs = ruleset(&[], &["otp"]);
+        assert!(!rs.is_sensitive("Your verification code is 483920"));
+        // other built-ins untouched
+        assert!(rs.is_sensitive("4111 1111 1111 1111"));
+        assert!(rs.is_sensitive("-----BEGIN RSA PRIVATE KEY-----"));
+    }
+
+    #[test]
+    fn invalid_pattern_is_skipped_not_fatal() {
+        let rs = ruleset(&["valid-\\w+", "("], &[]);
+        assert!(rs.is_sensitive("valid-token"));
+        assert!(!rs.is_sensitive("plain text"));
+    }
+
+    #[test]
+    fn unknown_disable_name_is_ignored() {
+        let rs = ruleset(&[], &["not_a_rule"]);
+        assert!(rs.is_sensitive("OTP: 12345678"));
     }
 }

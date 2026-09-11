@@ -22,3 +22,19 @@ width = 520
 # "primary" badge. Off by default because primary selections tend to be
 # transient and noisy.
 primary = false
+
+[ignore]
+# Layer your own rules on top of the built-in copied-secret heuristics.
+#
+# patterns: extra regular expressions. Copied text matching any of these is
+#   treated as sensitive and never persisted. Useful for host- or
+#   org-specific secret shapes the built-ins don't know about. An invalid
+#   pattern is logged to stderr and skipped.
+# disable: built-in heuristics to switch off, by name, when one keeps
+#   tripping on something you genuinely want kept (an internal ID that
+#   happens to be Luhn-valid, an OTP-shaped confirmation code, ...). Valid
+#   names: private_key, credential_line, otp, card_number, api_token.
+#
+# Both default to empty, which leaves the built-in heuristic unchanged.
+patterns = []
+disable = []

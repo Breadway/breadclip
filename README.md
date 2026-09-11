@@ -103,6 +103,10 @@ width = 520   # popup panel width, px
 
 [capture]
 primary = false  # also watch the middle-click primary selection
+
+[ignore]
+patterns = []    # extra regex patterns to treat as sensitive
+disable = []     # built-in secret rules to switch off, by name
 ```
 
 ## Data storage
@@ -125,7 +129,7 @@ stored alongside regular clipboard entries with a `primary` badge.
 
 - `history.db` and every file under `images/` are created with `0600` permissions (owner read/write only), regardless of your umask.
 - breadclipd **never persists clipboard content flagged as sensitive**. `wl-paste --watch` reports copies made with `wl-copy --sensitive` (which also covers offers advertising the `x-kde-passwordManagerHint` MIME type, the convention used by KeePassXC, Bitwarden, and other password managers to mark content they own) via `CLIPBOARD_STATE=sensitive`, and those copies are skipped entirely and never reach the database.
-- On top of that, breadclipd runs **best-effort ignore rules** that skip copies that *look* like secrets even when the app didn't flag them: one-time codes, Luhn-valid credit card numbers, private key blocks, `password:`-style credential lines, and well-known API token prefixes (see `breadclipd/src/ignore_rules.rs`). These are deliberately conservative and are a convenience, not a security boundary: the 0600/0700 permissions are the real protection.
+- On top of that, breadclipd runs **best-effort ignore rules** that skip copies that *look* like secrets even when the app didn't flag them: one-time codes, Luhn-valid credit card numbers, private key blocks, `password:`-style credential lines, and well-known API token prefixes (see `breadclipd/src/ignore_rules.rs`). These are deliberately conservative and are a convenience, not a security boundary: the 0600/0700 permissions are the real protection. The `[ignore]` section of `config.toml` tunes them: `patterns` adds extra regexes to treat as sensitive, and `disable` switches off a built-in rule by name (`private_key`, `credential_line`, `otp`, `card_number`, `api_token`) when it keeps tripping on something you want kept.
 - That said, this is still a plaintext SQLite database of everything else you copy. Anything copied by an app that doesn't set the hint (e.g. copying a password from a terminal or a non-integrated app) will be stored like any other text entry. Treat `history.db` as sensitive, and don't rely on it as your only safeguard.
 
 ## Theming

@@ -17,6 +17,14 @@
 //!
 //! [capture]
 //! primary = false  # also watch the middle-click primary selection
+//!
+//! [ignore]
+//! # Extra patterns. Copied text matching any of these regular expressions
+//! # is treated as sensitive and never persisted.
+//! patterns = ['^ACME-\d{4,}\b']
+//! # Built-in heuristics to switch off, by name. Valid names:
+//! #   private_key, credential_line, otp, card_number, api_token
+//! disable = ["otp"]
 //! ```
 
 use crate::Retention;
@@ -25,11 +33,23 @@ use toml_edit::{DocumentMut, Item};
 
 /// Resolved configuration. `Config::default()` matches the built-in
 /// behavior before config files existed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     pub retention: Retention,
     pub panel_width: i32,
     pub capture_primary: bool,
+    pub ignore: IgnoreConfig,
+}
+
+/// User overrides for the copied-secret heuristics (see
+/// `breadclipd`'s `ignore_rules`). An absent `[ignore]` section leaves both
+/// lists empty, which is the built-in heuristic unchanged.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct IgnoreConfig {
+    /// Extra regular expressions; text matching any is treated as sensitive.
+    pub patterns: Vec<String>,
+    /// Names of built-in rules to switch off.
+    pub disable: Vec<String>,
 }
 
 impl Default for Config {
@@ -38,6 +58,7 @@ impl Default for Config {
             retention: Retention::default(),
             panel_width: 520,
             capture_primary: false,
+            ignore: IgnoreConfig::default(),
         }
     }
 }
@@ -67,6 +88,10 @@ pub fn load() -> Config {
         panel_width: int(&doc, "panel", "width", 520)
             .clamp(MIN_PANEL_WIDTH, MAX_PANEL_WIDTH) as i32,
         capture_primary: boolean(&doc, "capture", "primary", false),
+        ignore: IgnoreConfig {
+            patterns: string_array(&doc, "ignore", "patterns"),
+            disable: string_array(&doc, "ignore", "disable"),
+        },
     }
 }
 
@@ -84,6 +109,22 @@ fn boolean(doc: &DocumentMut, section: &str, key: &str, default: bool) -> bool {
         .and_then(|t| t.get(key))
         .and_then(Item::as_bool)
         .unwrap_or(default)
+}
+
+/// Read `[section] key` as an array of strings. A missing key, a
+/// non-array value, or non-string entries yield an empty list (entries
+/// that are strings are still kept when others are not).
+fn string_array(doc: &DocumentMut, section: &str, key: &str) -> Vec<String> {
+    doc.get(section)
+        .and_then(Item::as_table)
+        .and_then(|t| t.get(key))
+        .and_then(Item::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -170,6 +211,54 @@ text = 7
             assert_eq!(cfg.retention.images, Retention::default().images);
             assert_eq!(cfg.panel_width, Config::default().panel_width);
             assert!(!cfg.capture_primary);
+        });
+    }
+
+    #[test]
+    fn missing_ignore_section_is_empty() {
+        with_config_dir(|| {
+            assert_eq!(load().ignore, IgnoreConfig::default());
+        });
+    }
+
+    #[test]
+    fn parses_ignore_section() {
+        with_config_dir(|| {
+            write_config(
+                r#"
+[ignore]
+patterns = ['^ACME-\d{4,}\b', "secret-\\w+"]
+disable = ["otp", "card_number"]
+"#,
+            );
+            let cfg = load();
+            assert_eq!(
+                cfg.ignore.patterns,
+                vec![r"^ACME-\d{4,}\b".to_string(), r"secret-\w+".to_string()]
+            );
+            assert_eq!(
+                cfg.ignore.disable,
+                vec!["otp".to_string(), "card_number".to_string()]
+            );
+        });
+    }
+
+    #[test]
+    fn ignore_non_arrays_and_non_strings_are_dropped() {
+        with_config_dir(|| {
+            write_config(
+                r#"
+[ignore]
+patterns = "not-an-array"
+disable = ["otp", 7, "card_number"]
+"#,
+            );
+            let cfg = load();
+            assert!(cfg.ignore.patterns.is_empty());
+            assert_eq!(
+                cfg.ignore.disable,
+                vec!["otp".to_string(), "card_number".to_string()]
+            );
         });
     }
 }

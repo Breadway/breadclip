@@ -146,7 +146,7 @@ fn store_image(bytes: Vec<u8>, mime: &str, primary: bool) {
 /// arrives on our stdin together with its `CLIPBOARD_STATE` in one event, so
 /// the sensitive check and the data read can't race each other (two separate
 /// `wl-paste` calls could straddle a clipboard change mid-capture).
-fn capture_from_stdin(primary: bool) {
+fn capture_from_stdin(primary: bool, rules: &ignore_rules::Ruleset) {
     let mut buf = Vec::new();
     if std::io::stdin().read_to_end(&mut buf).is_err() || buf.is_empty() {
         return;
@@ -154,7 +154,7 @@ fn capture_from_stdin(primary: bool) {
     if let Some(mime) = sniff_image_mime(&buf) {
         store_image(buf, mime, primary);
     } else if let Ok(text) = String::from_utf8(buf) {
-        if !text.trim().is_empty() && !ignore_rules::is_sensitive(&text) {
+        if !text.trim().is_empty() && !rules.is_sensitive(&text) {
             store_text(&text, primary);
         }
     }
@@ -164,7 +164,7 @@ fn capture_from_stdin(primary: bool) {
 /// `CLIPBOARD_STATE` was set by wl-paste): ask wl-paste directly. Same
 /// behavior as the stdin path, including requesting whichever image type is
 /// actually offered rather than assuming PNG.
-fn capture_via_wl_paste(primary: bool) {
+fn capture_via_wl_paste(primary: bool, rules: &ignore_rules::Ruleset) {
     let types = get_available_types(primary);
 
     if types.iter().any(|t| t == PASSWORD_HINT_MIME) {
@@ -188,7 +188,7 @@ fn capture_via_wl_paste(primary: bool) {
         }
     } else if has_text {
         if let Some(text) = get_clipboard_text(primary) {
-            if !ignore_rules::is_sensitive(&text) {
+            if !rules.is_sensitive(&text) {
                 store_text(&text, primary);
             }
         }
@@ -206,10 +206,16 @@ fn capture_once(primary: bool) {
         Ok("sensitive") => {}
         // Empty clipboard (nil) or an explicit clear: nothing to store.
         Ok("nil") | Ok("clear") => {}
-        Ok("data") => capture_from_stdin(primary),
+        Ok("data") => capture_from_stdin(
+            primary,
+            &ignore_rules::Ruleset::from_config(&breadclip_core::config::load().ignore),
+        ),
         // Unset or unrecognized: not invoked by `--watch`. Fall back to the
         // direct wl-paste path rather than blocking on whatever stdin is.
-        _ => capture_via_wl_paste(primary),
+        _ => capture_via_wl_paste(
+            primary,
+            &ignore_rules::Ruleset::from_config(&breadclip_core::config::load().ignore),
+        ),
     }
 }
 
