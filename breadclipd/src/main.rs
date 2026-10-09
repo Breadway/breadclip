@@ -2,6 +2,7 @@ mod content_kind;
 mod ignore_rules;
 
 use bread_utils::bread_client::BreadClient;
+use bread_utils::bug::BugOptions;
 use bread_utils::singleton::{try_acquire, Acquire};
 use breadclip_core::{CaptureSource, HistoryDb};
 use serde_json::Value;
@@ -405,6 +406,16 @@ fn main() {
 
     eprintln!("breadclipd: started (pid {})", std::process::id());
 
+    // breadbug: crash, freeze and log reporting to breadd, local only (see
+    // bread-utils' `bug` module). breadclip handles clipboard contents, so it
+    // is the strictest configuration: no panic message (a formatted message
+    // could contain copied text) and no log forwarding. A report still gets
+    // the stack and, through the heartbeat, freeze detection.
+    let mut bug_opts = BugOptions::new(env!("CARGO_PKG_VERSION"));
+    bug_opts.panic_message = false;
+    bug_opts.forward_logs = false;
+    let bug = BreadClient::connect(APP_ID).enable_bug_reporting(bug_opts);
+
     // Long-lived, so this uses BreadClient::subscribe (a persistent
     // background thread with its own reconnect/backoff loop) rather than a
     // one-shot connection: the same client type capture_once() uses for
@@ -427,8 +438,11 @@ fn main() {
 
     // The watcher threads own the daemon's lifetime; this thread just keeps
     // the process (and the singleton guard above) alive.
+    // Ticking here (not from the watcher threads, which are idle whenever
+    // nothing is copied) means a stopped or wedged process goes quiet.
     loop {
-        thread::sleep(Duration::from_secs(3600));
+        bug.tick();
+        thread::sleep(Duration::from_secs(1));
     }
 }
 
