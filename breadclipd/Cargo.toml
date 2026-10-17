@@ -9,9 +9,9 @@ path = "src/main.rs"
 
 [dependencies]
 breadclip-core = { path = "../breadclip-core" }
-# Pilot for breadbug (ECO-68): uses the feature branch until bread-utils is
-# tagged with the bug module, then this goes back to a tag.
-bread-utils = { git = "https://git.breadway.dev/Breadway/bread-ecosystem", branch = "feature/breadbug-client", features = ["bread-client"] }
+# Pilot for breadbug (ECO-68): pinned to the bread-ecosystem tag that carries
+# the bug module. Move off the tag only if that module changes.
+bread-utils = { git = "https://git.breadway.dev/Breadway/bread-ecosystem", tag = "v0.8.1", features = ["bread-client"] }
 serde_json = "1"
 regex = "1"
 
