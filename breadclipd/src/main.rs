@@ -226,7 +226,7 @@ fn capture_once(primary: bool) {
 /// breadclip's own clipboard-history functionality, only mean this one
 /// notification doesn't go anywhere.
 fn emit_copied(kind: &str, len: usize) {
-    BreadClient::connect(APP_ID).emit(
+    BreadClient::connect_without_bug_reporting(APP_ID).emit(
         "bread.clip.copied",
         serde_json::json!({ "kind": kind, "len": len }),
     );
@@ -251,11 +251,12 @@ fn handle_command(event_name: &str, data: &Value) {
         "clear" => match HistoryDb::open().and_then(|db| db.clear_all()) {
             Ok(()) => {
                 eprintln!("breadclipd: cleared history via bread.command.clip.clear");
-                BreadClient::connect(APP_ID).emit("bread.clip.clear.done", serde_json::json!({}));
+                BreadClient::connect_without_bug_reporting(APP_ID)
+                    .emit("bread.clip.clear.done", serde_json::json!({}));
             }
             Err(e) => {
                 eprintln!("breadclipd: bread.command.clip.clear failed: {e}");
-                BreadClient::connect(APP_ID).emit(
+                BreadClient::connect_without_bug_reporting(APP_ID).emit(
                     "bread.clip.clear.failed",
                     serde_json::json!({ "error": e.to_string() }),
                 );
@@ -270,14 +271,14 @@ fn handle_command(event_name: &str, data: &Value) {
                             "breadclipd: {} entry {id} via bread.command.clip.pin",
                             if pin { "pinned" } else { "unpinned" }
                         );
-                        BreadClient::connect(APP_ID).emit(
+                        BreadClient::connect_without_bug_reporting(APP_ID).emit(
                             "bread.clip.pinned",
                             serde_json::json!({ "id": id, "pinned": pin }),
                         );
                     }
                     Err(e) => {
                         eprintln!("breadclipd: bread.command.clip.pin failed: {e}");
-                        BreadClient::connect(APP_ID).emit(
+                        BreadClient::connect_without_bug_reporting(APP_ID).emit(
                             "bread.clip.pin.failed",
                             serde_json::json!({ "error": e.to_string() }),
                         );
@@ -286,7 +287,7 @@ fn handle_command(event_name: &str, data: &Value) {
             }
             None => {
                 eprintln!("breadclipd: bread.command.clip.pin missing 'id'");
-                BreadClient::connect(APP_ID).emit(
+                BreadClient::connect_without_bug_reporting(APP_ID).emit(
                     "bread.clip.pin.failed",
                     serde_json::json!({ "error": "missing 'id'" }),
                 );
@@ -414,7 +415,7 @@ fn main() {
     let mut bug_opts = BugOptions::new(env!("CARGO_PKG_VERSION"));
     bug_opts.panic_message = false;
     bug_opts.forward_logs = false;
-    let bug = BreadClient::connect(APP_ID).enable_bug_reporting(bug_opts);
+    let bug = BreadClient::connect_without_bug_reporting(APP_ID).enable_bug_reporting(bug_opts);
 
     // Long-lived, so this uses BreadClient::subscribe (a persistent
     // background thread with its own reconnect/backoff loop) rather than a
@@ -422,7 +423,7 @@ fn main() {
     // `emit`, just the other half of it. breadd being absent or restarting
     // is transparent here too: the subscription just quietly stops
     // delivering commands until it reconnects.
-    let command_client = BreadClient::connect(APP_ID);
+    let command_client = BreadClient::connect_without_bug_reporting(APP_ID);
     let _commands = command_client.subscribe("bread.command.clip.**", |event| {
         handle_command(&event.event, &event.data);
     });
@@ -470,8 +471,14 @@ mod tests {
 
     #[test]
     fn sniff_image_mime_detects_png_and_jpeg() {
-        assert_eq!(sniff_image_mime(b"\x89PNG\r\n\x1a\nrest"), Some("image/png"));
-        assert_eq!(sniff_image_mime(&[0xFF, 0xD8, 0xFF, 0xE0]), Some("image/jpeg"));
+        assert_eq!(
+            sniff_image_mime(b"\x89PNG\r\n\x1a\nrest"),
+            Some("image/png")
+        );
+        assert_eq!(
+            sniff_image_mime(&[0xFF, 0xD8, 0xFF, 0xE0]),
+            Some("image/jpeg")
+        );
         assert_eq!(sniff_image_mime(b"plain text"), None);
     }
 
@@ -493,7 +500,8 @@ mod tests {
         // made contingent on the emit succeeding, this test would fail.
         with_isolated_history(|| {
             let db = HistoryDb::open().expect("open history db");
-            db.insert_text("something to clear", CaptureSource::Clipboard).unwrap();
+            db.insert_text("something to clear", CaptureSource::Clipboard)
+                .unwrap();
             assert_eq!(db.list_entries(10).unwrap().len(), 1);
 
             handle_command("bread.command.clip.clear", &serde_json::json!({}));
@@ -529,7 +537,8 @@ mod tests {
     fn handle_command_pin_without_id_is_a_no_op() {
         with_isolated_history(|| {
             let db = HistoryDb::open().expect("open history db");
-            db.insert_text("untouched", CaptureSource::Clipboard).unwrap();
+            db.insert_text("untouched", CaptureSource::Clipboard)
+                .unwrap();
 
             handle_command("bread.command.clip.pin", &serde_json::json!({}));
 
@@ -541,7 +550,8 @@ mod tests {
     fn handle_command_ignores_unrecognized_verb() {
         with_isolated_history(|| {
             let db = HistoryDb::open().expect("open history db");
-            db.insert_text("should survive", CaptureSource::Clipboard).unwrap();
+            db.insert_text("should survive", CaptureSource::Clipboard)
+                .unwrap();
 
             handle_command("bread.command.clip.select", &serde_json::json!({}));
 
@@ -558,7 +568,8 @@ mod tests {
     fn handle_command_ignores_events_outside_its_own_command_namespace() {
         with_isolated_history(|| {
             let db = HistoryDb::open().expect("open history db");
-            db.insert_text("should survive", CaptureSource::Clipboard).unwrap();
+            db.insert_text("should survive", CaptureSource::Clipboard)
+                .unwrap();
 
             // Not a `bread.command.clip.*` event at all: must be a no-op.
             handle_command("bread.command.pad.clear", &serde_json::json!({}));
