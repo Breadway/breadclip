@@ -3,6 +3,14 @@ name: check
 # Fast-fail lint/test on short-lived work branches, and on `main` itself:
 # a push to main immediately triggers a dev-track release build, so it
 # should be linted/tested first, not shipped unchecked.
+#
+# Builds in the same dev mode as dev-release.yml (git.breadway.dev
+# dependencies patched to their own repo's main via bread-ecosystem's
+# scripts/dev-deps.sh, no --locked), so a PR that depends on a
+# just-merged, not-yet-tagged change in bread-ecosystem passes here
+# instead of only being testable after a tag bump. See bread-ecosystem's
+# docs/release-channels.md ("Cross-repo dependency resolution") for the
+# full model. Part of ECO-38.
 on:
   push:
     branches: ['feature/**', 'fix/**', 'main']
@@ -18,8 +26,36 @@ jobs:
           git clone --branch "${GITHUB_REF_NAME}" --depth 1 \
             "https://git.breadway.dev/${GITHUB_REPOSITORY}.git" src
 
+      - name: clone bread-ecosystem (main)
+        run: |
+          set -euo pipefail
+          ECOSYSTEM_CI_DIR="$(mktemp -d /tmp/bread-ecosystem-check-XXXXXX)"
+          git clone --branch main https://git.breadway.dev/Breadway/bread-ecosystem.git "${ECOSYSTEM_CI_DIR}"
+          echo "ECOSYSTEM_CI_DIR=${ECOSYSTEM_CI_DIR}" >> "$GITHUB_ENV"
+
+      # Fails if any git.breadway.dev dependency in src's Cargo.toml uses
+      # rev/branch/path instead of tag. Cargo.toml itself must always stay
+      # tag-pinned; dev-mode resolution to main happens only at build time,
+      # below, never by editing the manifest.
+      - name: lint git.breadway.dev dependency pins
+        run: bash "${ECOSYSTEM_CI_DIR}/scripts/lint-pins.sh" --root src
+
+      # DEV_DEPS_DIR is left at its default (a true sibling of src, in the
+      # job's own working directory): ci/build.sh's docker wrapper mounts
+      # src's PARENT directory (not just src itself), so a sibling clone is
+      # visible inside the container at the same relative position as on
+      # the host. breadclip is itself a Cargo workspace; forcing the clone
+      # *inside* src instead breaks Cargo's workspace-field inheritance,
+      # see bread-ecosystem's ci/build.sh for the full explanation.
+      - name: resolve dev dependencies to main
+        run: |
+          set -euo pipefail
+          cd src
+          bash "${ECOSYSTEM_CI_DIR}/scripts/dev-deps.sh" --root .
+          rm -rf "${ECOSYSTEM_CI_DIR}"
+
       - name: clippy
-        run: cd src && bash ci/build.sh cargo clippy --workspace --all-targets --locked -- -D warnings
+        run: cd src && bash ci/build.sh cargo clippy --workspace --all-targets -- -D warnings
 
       - name: test
-        run: cd src && bash ci/build.sh cargo test --workspace --locked
+        run: cd src && bash ci/build.sh cargo test --workspace
