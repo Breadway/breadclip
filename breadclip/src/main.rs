@@ -1,14 +1,12 @@
 mod css;
 mod screenshot;
 
+use bread_theme::load_palette;
 use breadclip_core::{ClipEntry, HistoryDb};
-use bread_theme::{load_palette};
 use gtk4::{
-    glib,
-    pango::EllipsizeMode,
-    prelude::*,
-    Application, Box as GBox, Button, ContentFit, EventControllerKey, Label,
-    ListBox, Orientation, Picture, PolicyType, ScrolledWindow, SearchEntry, SelectionMode,
+    glib, pango::EllipsizeMode, prelude::*, Application, Box as GBox, Button, ContentFit,
+    EventControllerKey, Label, ListBox, Orientation, Picture, PolicyType, ScrolledWindow,
+    SearchEntry, SelectionMode,
 };
 use std::{
     cell::Cell,
@@ -24,8 +22,8 @@ use std::{
 // fetching it all keeps every pinned row reachable regardless of count.
 const FETCH_ALL: usize = 10_000;
 const PANEL_GAP: i32 = 8; // gap between focused window bottom and panel top
-// Fallback panel height, used only if measuring the panel before it's shown
-// reports nothing sensible.
+                          // Fallback panel height, used only if measuring the panel before it's shown
+                          // reports nothing sensible.
 const PANEL_HEIGHT_ESTIMATE: i32 = 580;
 // The popup is a layer-shell surface with KeyboardMode::Exclusive (needed so
 // Escape/Enter/arrow keys reach it instead of the client behind it), and
@@ -366,7 +364,8 @@ fn run_ui(entries: Vec<ClipEntry>, screenshot_req: Option<screenshot::Screenshot
         }
 
         // ---- Shared state ----
-        let query_rc: Rc<std::cell::RefCell<String>> = Rc::new(std::cell::RefCell::new(String::new()));
+        let query_rc: Rc<std::cell::RefCell<String>> =
+            Rc::new(std::cell::RefCell::new(String::new()));
         let filter_rc: Rc<Cell<Filter>> = Rc::new(Cell::new(Filter::All));
 
         let close_all: Rc<dyn Fn()> = Rc::new({
@@ -552,7 +551,9 @@ fn run_ui(entries: Vec<ClipEntry>, screenshot_req: Option<screenshot::Screenshot
         // ---- Click outside panel → close (same pattern as breadbox) ----
         {
             let close_outside = Rc::clone(&close_all);
-            bread_utils::gtk_popup::close_on_outside_click(&window, &panel, move || close_outside());
+            bread_utils::gtk_popup::close_on_outside_click(&window, &panel, move || {
+                close_outside()
+            });
         }
 
         if let Some(req) = screenshot_req.clone() {
@@ -607,7 +608,9 @@ fn main() {
             Ok(bread_utils::singleton::Toggle::Started(guard)) => Some(guard),
             Ok(bread_utils::singleton::Toggle::KilledExisting) => return,
             Err(e) => {
-                eprintln!("breadclip: single-instance lock unavailable ({e}); continuing without it");
+                eprintln!(
+                    "breadclip: single-instance lock unavailable ({e}); continuing without it"
+                );
                 None
             }
         }

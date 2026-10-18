@@ -98,7 +98,12 @@ fn looks_like_private_key(text: &str) -> bool {
 /// A line that labels a credential directly: `password: hunter2`,
 /// `passwd = hunter2`, etc.
 fn looks_like_credential_line(text: &str) -> bool {
-    let first = text.lines().next().unwrap_or("").trim().to_ascii_lowercase();
+    let first = text
+        .lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
     const PREFIXES: [&str; 8] = [
         "password:",
         "password =",
@@ -121,7 +126,14 @@ fn looks_like_otp(text: &str) -> bool {
     }
     let lower = text.to_ascii_lowercase();
     const LABELS: [&str; 8] = [
-        "code", "otp", "verification", "verif", "2fa", "passcode", "one-time", "one time",
+        "code",
+        "otp",
+        "verification",
+        "verif",
+        "2fa",
+        "passcode",
+        "one-time",
+        "one time",
     ];
     if !LABELS.iter().any(|k| lower.contains(k)) {
         return false;
