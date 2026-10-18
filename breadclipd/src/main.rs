@@ -1,17 +1,11 @@
 mod content_kind;
 mod ignore_rules;
+mod privacy_clients;
 
-use bread_utils::bread_client::BreadClient;
-use bread_utils::bug::BugOptions;
 use bread_utils::singleton::{try_acquire, Acquire};
 use breadclip_core::{CaptureSource, HistoryDb};
 use serde_json::Value;
 use std::{env, io::Read, process::Command, thread, time::Duration};
-
-/// This app's id in bread's sibling-app namespace registry
-/// (`bread_shared::apps::KNOWN_APPS`): events are published as
-/// `bread.clip.*`, commands are received on `bread.command.clip.*`.
-const APP_ID: &str = "clip";
 
 /// Argument used to invoke this same binary as the one-shot handler for
 /// `wl-paste --watch`. Kept as a plain positional arg (no clap dependency
@@ -226,7 +220,7 @@ fn capture_once(primary: bool) {
 /// breadclip's own clipboard-history functionality, only mean this one
 /// notification doesn't go anywhere.
 fn emit_copied(kind: &str, len: usize) {
-    BreadClient::connect_without_bug_reporting(APP_ID).emit(
+    privacy_clients::client().emit(
         "bread.clip.copied",
         serde_json::json!({ "kind": kind, "len": len }),
     );
@@ -251,12 +245,11 @@ fn handle_command(event_name: &str, data: &Value) {
         "clear" => match HistoryDb::open().and_then(|db| db.clear_all()) {
             Ok(()) => {
                 eprintln!("breadclipd: cleared history via bread.command.clip.clear");
-                BreadClient::connect_without_bug_reporting(APP_ID)
-                    .emit("bread.clip.clear.done", serde_json::json!({}));
+                privacy_clients::client().emit("bread.clip.clear.done", serde_json::json!({}));
             }
             Err(e) => {
                 eprintln!("breadclipd: bread.command.clip.clear failed: {e}");
-                BreadClient::connect_without_bug_reporting(APP_ID).emit(
+                privacy_clients::client().emit(
                     "bread.clip.clear.failed",
                     serde_json::json!({ "error": e.to_string() }),
                 );
@@ -271,14 +264,14 @@ fn handle_command(event_name: &str, data: &Value) {
                             "breadclipd: {} entry {id} via bread.command.clip.pin",
                             if pin { "pinned" } else { "unpinned" }
                         );
-                        BreadClient::connect_without_bug_reporting(APP_ID).emit(
+                        privacy_clients::client().emit(
                             "bread.clip.pinned",
                             serde_json::json!({ "id": id, "pinned": pin }),
                         );
                     }
                     Err(e) => {
                         eprintln!("breadclipd: bread.command.clip.pin failed: {e}");
-                        BreadClient::connect_without_bug_reporting(APP_ID).emit(
+                        privacy_clients::client().emit(
                             "bread.clip.pin.failed",
                             serde_json::json!({ "error": e.to_string() }),
                         );
@@ -287,7 +280,7 @@ fn handle_command(event_name: &str, data: &Value) {
             }
             None => {
                 eprintln!("breadclipd: bread.command.clip.pin missing 'id'");
-                BreadClient::connect_without_bug_reporting(APP_ID).emit(
+                privacy_clients::client().emit(
                     "bread.clip.pin.failed",
                     serde_json::json!({ "error": "missing 'id'" }),
                 );
@@ -412,10 +405,7 @@ fn main() {
     // is the strictest configuration: no panic message (a formatted message
     // could contain copied text) and no log forwarding. A report still gets
     // the stack and, through the heartbeat, freeze detection.
-    let mut bug_opts = BugOptions::new(env!("CARGO_PKG_VERSION"));
-    bug_opts.panic_message = false;
-    bug_opts.forward_logs = false;
-    let bug = BreadClient::connect_without_bug_reporting(APP_ID).enable_bug_reporting(bug_opts);
+    let bug = privacy_clients::enable_reporting();
 
     // Long-lived, so this uses BreadClient::subscribe (a persistent
     // background thread with its own reconnect/backoff loop) rather than a
@@ -423,7 +413,7 @@ fn main() {
     // `emit`, just the other half of it. breadd being absent or restarting
     // is transparent here too: the subscription just quietly stops
     // delivering commands until it reconnects.
-    let command_client = BreadClient::connect_without_bug_reporting(APP_ID);
+    let command_client = privacy_clients::client();
     let _commands = command_client.subscribe("bread.command.clip.**", |event| {
         handle_command(&event.event, &event.data);
     });
