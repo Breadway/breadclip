@@ -82,11 +82,16 @@ pub fn load() -> Config {
         retention: Retention {
             text: int(&doc, "retention", "text", Retention::default().text as i64)
                 .clamp(0, MAX_RETENTION) as usize,
-            images: int(&doc, "retention", "images", Retention::default().images as i64)
-                .clamp(0, MAX_RETENTION) as usize,
+            images: int(
+                &doc,
+                "retention",
+                "images",
+                Retention::default().images as i64,
+            )
+            .clamp(0, MAX_RETENTION) as usize,
         },
-        panel_width: int(&doc, "panel", "width", 520)
-            .clamp(MIN_PANEL_WIDTH, MAX_PANEL_WIDTH) as i32,
+        panel_width: int(&doc, "panel", "width", 520).clamp(MIN_PANEL_WIDTH, MAX_PANEL_WIDTH)
+            as i32,
         capture_primary: boolean(&doc, "capture", "primary", false),
         ignore: IgnoreConfig {
             patterns: string_array(&doc, "ignore", "patterns"),
@@ -132,7 +137,9 @@ mod tests {
     use super::*;
 
     fn with_config_dir<F: FnOnce() -> T, T>(f: F) -> T {
-        let _guard = crate::env_test_lock().lock().unwrap_or_else(|p| p.into_inner());
+        let _guard = crate::env_test_lock()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         let dir = tempfile::tempdir().expect("tempdir");
         std::env::set_var("XDG_CONFIG_HOME", dir.path());
         let r = f();

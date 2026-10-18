@@ -78,7 +78,11 @@ impl fmt::Display for HistoryError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             HistoryError::Sql(e) => write!(f, "database error: {e}"),
-            HistoryError::Io { action, path, source } => {
+            HistoryError::Io {
+                action,
+                path,
+                source,
+            } => {
                 write!(f, "failed to {action} {}: {source}", path.display())
             }
         }
@@ -285,7 +289,8 @@ impl HistoryDb {
             )
             .ok()
             .flatten();
-        self.conn.execute("DELETE FROM history WHERE id = ?1", [id])?;
+        self.conn
+            .execute("DELETE FROM history WHERE id = ?1", [id])?;
         if let Some(p) = image_path {
             let _ = std::fs::remove_file(p);
         }
@@ -476,7 +481,11 @@ pub(crate) fn env_test_lock() -> &'static std::sync::Mutex<()> {
 mod tests {
     use super::*;
 
-    fn open_test_db() -> (std::sync::MutexGuard<'static, ()>, tempfile::TempDir, HistoryDb) {
+    fn open_test_db() -> (
+        std::sync::MutexGuard<'static, ()>,
+        tempfile::TempDir,
+        HistoryDb,
+    ) {
         let guard = env_test_lock().lock().unwrap_or_else(|p| p.into_inner());
         let dir = tempfile::tempdir().expect("tempdir");
         std::env::set_var("XDG_DATA_HOME", dir.path());
@@ -489,8 +498,12 @@ mod tests {
         let (_guard, _dir, db) = open_test_db();
         db.insert_text("first", CaptureSource::Clipboard).unwrap();
         db.insert_text("second", CaptureSource::Clipboard).unwrap();
-        db.insert_image(b"not really a png, just bytes for the test", "image/png", CaptureSource::Clipboard)
-            .unwrap();
+        db.insert_image(
+            b"not really a png, just bytes for the test",
+            "image/png",
+            CaptureSource::Clipboard,
+        )
+        .unwrap();
 
         let before = db.list_entries(10).unwrap();
         assert_eq!(before.len(), 3);
@@ -541,11 +554,16 @@ mod tests {
     fn trim_caps_text_and_images_at_retention_limits() {
         let (_guard, _dir, db) = open_test_db();
         for i in 0..210 {
-            db.insert_text(&format!("text-{i}"), CaptureSource::Clipboard).unwrap();
+            db.insert_text(&format!("text-{i}"), CaptureSource::Clipboard)
+                .unwrap();
         }
         for i in 0..55 {
-            db.insert_image(format!("img-{i}").as_bytes(), "image/png", CaptureSource::Clipboard)
-                .unwrap();
+            db.insert_image(
+                format!("img-{i}").as_bytes(),
+                "image/png",
+                CaptureSource::Clipboard,
+            )
+            .unwrap();
         }
         let entries = db.list_entries(1000).unwrap();
         let texts = entries
@@ -563,24 +581,35 @@ mod tests {
     #[test]
     fn trim_respects_configured_retention() {
         let (_guard, _dir, _db) = open_test_db(); // holds the env lock
-        // Reopen with a custom retention on a fresh dir.
+                                                  // Reopen with a custom retention on a fresh dir.
         let dir = tempfile::tempdir().expect("tempdir");
         std::env::set_var("XDG_DATA_HOME", dir.path());
         let db = HistoryDb::open_with(Retention { text: 3, images: 2 }).expect("open db");
         for i in 0..10 {
-            db.insert_text(&format!("t{i}"), CaptureSource::Clipboard).unwrap();
+            db.insert_text(&format!("t{i}"), CaptureSource::Clipboard)
+                .unwrap();
         }
         for i in 0..5 {
-            db.insert_image(format!("img-{i}").as_bytes(), "image/png", CaptureSource::Clipboard)
-                .unwrap();
+            db.insert_image(
+                format!("img-{i}").as_bytes(),
+                "image/png",
+                CaptureSource::Clipboard,
+            )
+            .unwrap();
         }
         let entries = db.list_entries(100).unwrap();
         assert_eq!(
-            entries.iter().filter(|e| e.mime_type == "text/plain").count(),
+            entries
+                .iter()
+                .filter(|e| e.mime_type == "text/plain")
+                .count(),
             3
         );
         assert_eq!(
-            entries.iter().filter(|e| e.mime_type.starts_with("image/")).count(),
+            entries
+                .iter()
+                .filter(|e| e.mime_type.starts_with("image/"))
+                .count(),
             2
         );
     }
@@ -589,7 +618,8 @@ mod tests {
     fn pinned_entries_survive_trim() {
         let (_guard, _dir, db) = open_test_db();
         for i in 0..205 {
-            db.insert_text(&format!("t{i}"), CaptureSource::Clipboard).unwrap();
+            db.insert_text(&format!("t{i}"), CaptureSource::Clipboard)
+                .unwrap();
         }
         let entries = db.list_entries(1000).unwrap();
         let oldest_id = entries.last().unwrap().id;
@@ -599,7 +629,8 @@ mod tests {
         // Push past the cap: the pinned entry must survive while the rest
         // stay capped.
         for i in 0..10 {
-            db.insert_text(&format!("more{i}"), CaptureSource::Clipboard).unwrap();
+            db.insert_text(&format!("more{i}"), CaptureSource::Clipboard)
+                .unwrap();
         }
         let entries = db.list_entries(1000).unwrap();
         assert!(
@@ -617,11 +648,14 @@ mod tests {
         // Unpinning lets it get trimmed again like any other entry.
         db.set_pinned(oldest_id, false).unwrap();
         for i in 0..10 {
-            db.insert_text(&format!("final{i}"), CaptureSource::Clipboard).unwrap();
+            db.insert_text(&format!("final{i}"), CaptureSource::Clipboard)
+                .unwrap();
         }
         let entries = db.list_entries(1000).unwrap();
         assert!(
-            !entries.iter().any(|e| e.content.as_deref() == Some(oldest_text.as_str())),
+            !entries
+                .iter()
+                .any(|e| e.content.as_deref() == Some(oldest_text.as_str())),
             "an unpinned entry falls back under normal trimming"
         );
     }
@@ -643,11 +677,16 @@ mod tests {
     #[test]
     fn primary_source_is_recorded() {
         let (_guard, _dir, db) = open_test_db();
-        db.insert_text("primary text", CaptureSource::Primary).unwrap();
-        db.insert_image(b"png", "image/png", CaptureSource::Clipboard).unwrap();
+        db.insert_text("primary text", CaptureSource::Primary)
+            .unwrap();
+        db.insert_image(b"png", "image/png", CaptureSource::Clipboard)
+            .unwrap();
 
         let entries = db.list_entries(10).unwrap();
-        let text = entries.iter().find(|e| e.mime_type == "text/plain").unwrap();
+        let text = entries
+            .iter()
+            .find(|e| e.mime_type == "text/plain")
+            .unwrap();
         assert!(text.is_primary, "primary-selection text is tagged");
         let img = entries
             .iter()
@@ -659,8 +698,12 @@ mod tests {
     #[test]
     fn insert_image_jpeg_stores_jpg_file_and_trims_with_other_images() {
         let (_guard, _dir, db) = open_test_db();
-        db.insert_image(b"\xff\xd8\xff fake jpeg", "image/jpeg", CaptureSource::Clipboard)
-            .unwrap();
+        db.insert_image(
+            b"\xff\xd8\xff fake jpeg",
+            "image/jpeg",
+            CaptureSource::Clipboard,
+        )
+        .unwrap();
         let jpeg_path = db
             .list_entries(10)
             .unwrap()
@@ -674,8 +717,12 @@ mod tests {
 
         // 49 more images: the jpeg is still within the newest 50.
         for i in 0..49 {
-            db.insert_image(format!("img-{i}").as_bytes(), "image/png", CaptureSource::Clipboard)
-                .unwrap();
+            db.insert_image(
+                format!("img-{i}").as_bytes(),
+                "image/png",
+                CaptureSource::Clipboard,
+            )
+            .unwrap();
         }
         let entries = db.list_entries(100).unwrap();
         assert_eq!(
@@ -692,8 +739,12 @@ mod tests {
 
         // Push it past the cap: the jpeg row and its file both go.
         for i in 0..10 {
-            db.insert_image(format!("late-{i}").as_bytes(), "image/png", CaptureSource::Clipboard)
-                .unwrap();
+            db.insert_image(
+                format!("late-{i}").as_bytes(),
+                "image/png",
+                CaptureSource::Clipboard,
+            )
+            .unwrap();
         }
         let entries = db.list_entries(100).unwrap();
         assert!(!entries.iter().any(|e| e.mime_type == "image/jpeg"));
@@ -728,7 +779,8 @@ mod tests {
     #[test]
     fn gc_orphaned_images_removes_unreferenced_but_keeps_referenced_files() {
         let (_guard, _dir, db) = open_test_db();
-        db.insert_image(b"png-a", "image/png", CaptureSource::Clipboard).unwrap();
+        db.insert_image(b"png-a", "image/png", CaptureSource::Clipboard)
+            .unwrap();
         let referenced = db
             .list_entries(10)
             .unwrap()

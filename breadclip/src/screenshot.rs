@@ -77,7 +77,9 @@ pub fn dispatch(window: &gtk4::ApplicationWindow, req: ScreenshotRequest) {
             window.connect_map(move |_| {
                 let output = output.clone();
                 gtk4::glib::timeout_add_local_once(SETTLE_DELAY, move || {
-                    finish(bread_screenshots::capture_region(0, 0, width, height, &output));
+                    finish(bread_screenshots::capture_region(
+                        0, 0, width, height, &output,
+                    ));
                 });
             });
         }
