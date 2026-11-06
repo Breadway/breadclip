@@ -19,7 +19,7 @@ use gtk4::prelude::*;
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "breadclip")]
+#[command(name = "breadclip", version)]
 pub struct Cli {
     /// Render the named view, capture it, then exit instead of running
     /// normally. Known views: "history".
@@ -97,5 +97,56 @@ fn finish(result: anyhow::Result<()>) {
             eprintln!("breadclip: screenshot capture failed: {e}");
             std::process::exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cli;
+    use clap::{error::ErrorKind, Parser};
+
+    #[test]
+    fn version_is_answered_before_any_ui() {
+        for flag in ["--version", "-V"] {
+            let Err(err) = Cli::try_parse_from(["breadclip", flag]) else {
+                panic!("{flag} should exit through clap");
+            };
+            assert_eq!(err.kind(), ErrorKind::DisplayVersion);
+            assert!(
+                err.to_string().contains(env!("CARGO_PKG_VERSION")),
+                "{flag} did not print the crate version"
+            );
+        }
+    }
+
+    #[test]
+    fn help_is_answered_before_any_ui() {
+        for flag in ["--help", "-h"] {
+            let Err(err) = Cli::try_parse_from(["breadclip", flag]) else {
+                panic!("{flag} should exit through clap");
+            };
+            assert_eq!(err.kind(), ErrorKind::DisplayHelp);
+            assert!(err.to_string().contains("--screenshot"));
+        }
+    }
+
+    #[test]
+    fn ordinary_flags_still_parse() {
+        let cli = Cli::try_parse_from([
+            "breadclip",
+            "--screenshot",
+            "history",
+            "--output",
+            "/tmp/opencode/breadclip.png",
+            "--width",
+            "800",
+            "--height",
+            "600",
+        ])
+        .expect("screenshot flags should parse");
+        let req = cli.screenshot_request().expect("complete pair");
+        assert_eq!(req.view, "history");
+        assert_eq!(req.output.to_str(), Some("/tmp/opencode/breadclip.png"));
+        assert_eq!((req.width, req.height), (800, 600));
     }
 }
