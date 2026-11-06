@@ -5,7 +5,7 @@ use bread_theme::load_palette;
 use breadclip_core::{ClipEntry, HistoryDb};
 use gtk4::{
     glib, pango::EllipsizeMode, prelude::*, Application, Box as GBox, Button, ContentFit,
-    EventControllerKey, Label, ListBox, Orientation, Picture, PolicyType, ScrolledWindow,
+    EventControllerKey, Label, ListBox, Orientation, Overlay, Picture, PolicyType, ScrolledWindow,
     SearchEntry, SelectionMode,
 };
 use std::{
@@ -21,6 +21,9 @@ use std::{
 // derived from the retention caps alone. History stays tiny in practice:
 // fetching it all keeps every pinned row reachable regardless of count.
 const FETCH_ALL: usize = 10_000;
+// Fixed thumbnail box. GTK4 CSS has min-* but no max-*, so the hard cap is a
+// fixed-size overlay around the Picture (see `build_thumbnail`).
+const THUMBNAIL_SIZE: i32 = 48;
 const PANEL_GAP: i32 = 8; // gap between focused window bottom and panel top
                           // Fallback panel height, used only if measuring the panel before it's shown
                           // reports nothing sensible.
@@ -114,6 +117,38 @@ fn refresh_list(list: &ListBox, query: &str, filter: Filter) {
     list.select_row(first.as_ref());
 }
 
+/// A clipboard image thumbnail, clamped to exactly `THUMBNAIL_SIZE` square.
+///
+/// The Picture's natural size is the image's own size, and GTK4 CSS only has
+/// `min-width`/`min-height` (no `max-*`). A fixed-size base child under a
+/// `GtkOverlay` gives the thumbnail a 48x48 measured box that the Picture
+/// cannot grow, and `can_shrink` scales the image down to that allocation.
+fn build_thumbnail(path: Option<&str>) -> Overlay {
+    let pic = Picture::new();
+    if let Some(path) = path {
+        pic.set_filename(Some(path));
+    }
+    pic.set_can_shrink(true);
+    pic.set_content_fit(ContentFit::Contain);
+    pic.add_css_class("clip-thumbnail");
+    pic.set_hexpand(true);
+    pic.set_vexpand(true);
+
+    // The base child alone decides how much room the thumbnail takes. Overlay
+    // children are not measured by GtkOverlay, so the Picture's own natural
+    // size cannot widen the row; it is allocated the 48x48 box and
+    // `can_shrink` scales the image down to fit.
+    let base = GBox::new(Orientation::Vertical, 0);
+    base.set_size_request(THUMBNAIL_SIZE, THUMBNAIL_SIZE);
+
+    let overlay = Overlay::new();
+    overlay.set_child(Some(&base));
+    overlay.add_overlay(&pic);
+    overlay.set_size_request(THUMBNAIL_SIZE, THUMBNAIL_SIZE);
+    overlay.set_valign(gtk4::Align::Center);
+    overlay
+}
+
 fn build_row(entry: &ClipEntry) -> gtk4::ListBoxRow {
     let row = gtk4::ListBoxRow::new();
     row.add_css_class("clip-row");
@@ -122,20 +157,7 @@ fn build_row(entry: &ClipEntry) -> gtk4::ListBoxRow {
     hbox.set_valign(gtk4::Align::Center);
 
     if entry.mime_type.starts_with("image/") {
-        // Thumbnail
-        let thumb = if let Some(ref path) = entry.image_path {
-            let pic = Picture::new();
-            pic.set_filename(Some(path.as_str()));
-            pic.set_can_shrink(true);
-            pic.set_content_fit(ContentFit::Contain);
-            pic.add_css_class("clip-thumbnail");
-            pic
-        } else {
-            let pic = Picture::new();
-            pic.add_css_class("clip-thumbnail");
-            pic
-        };
-        hbox.append(&thumb);
+        hbox.append(&build_thumbnail(entry.image_path.as_deref()));
 
         let type_lbl = Label::new(Some("image"));
         type_lbl.add_css_class("clip-meta");
