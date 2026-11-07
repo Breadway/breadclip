@@ -61,25 +61,6 @@ jobs:
         run: |
           set -euo pipefail
           cd "$BREAD_CI_JOB_DIR/src"
-          # This workspace intentionally has two bread-utils tag versions
-          # (0.7.2 and 0.8.1). Until dev-deps.sh qualifies package IDs, make
-          # its update argument unambiguous for this multi-version workspace.
-          python3 - "${ECOSYSTEM_CI_DIR}/scripts/dev-deps.sh" <<'PY'
-          from pathlib import Path
-          import sys
-
-          script = Path(sys.argv[1])
-          text = script.read_text()
-          old = 'UPDATE_ARGS+=(-p "${crate}")'
-          replacement = '''if [ "${crate}" = "bread-utils" ]; then
-              UPDATE_ARGS+=(-p "bread-utils@0.7.2" -p "bread-utils@0.8.1")
-          else
-              UPDATE_ARGS+=(-p "${crate}")
-          fi'''
-          if old not in text:
-              raise SystemExit("dev-deps.sh update argument format changed; refusing workaround")
-          script.write_text(text.replace(old, replacement, 1))
-          PY
           bash "${ECOSYSTEM_CI_DIR}/scripts/dev-deps.sh" --root .
           rm -rf "${ECOSYSTEM_CI_DIR}"
 

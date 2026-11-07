@@ -48,24 +48,6 @@ jobs:
         run: |
           set -euo pipefail
           cd src
-          # breadclip has two bread-utils versions. The shared resolver
-          # currently passes an ambiguous unqualified package name to Cargo.
-          python3 - "${ECOSYSTEM_CI_DIR}/scripts/dev-deps.sh" <<'PY'
-          from pathlib import Path
-          import sys
-
-          script = Path(sys.argv[1])
-          text = script.read_text()
-          old = 'UPDATE_ARGS+=(-p "${crate}")'
-          replacement = '''if [ "${crate}" = "bread-utils" ]; then
-              UPDATE_ARGS+=(-p "bread-utils@0.7.2" -p "bread-utils@0.8.1")
-          else
-              UPDATE_ARGS+=(-p "${crate}")
-          fi'''
-          if old not in text:
-              raise SystemExit("dev-deps.sh update argument format changed; refusing workaround")
-          script.write_text(text.replace(old, replacement, 1))
-          PY
           bash "${ECOSYSTEM_CI_DIR}/scripts/dev-deps.sh" --root .
 
       - name: build
