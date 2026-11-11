@@ -162,7 +162,7 @@ dependencies = [
 
 [[package]]
 name = "breadclip"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "bread-screenshots",
@@ -178,7 +178,7 @@ dependencies = [
 
 [[package]]
 name = "breadclip-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "bread-utils 0.7.2",
  "hex",
@@ -190,7 +190,7 @@ dependencies = [
 
 [[package]]
 name = "breadclipd"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "bread-utils 0.8.1",
  "breadclip-core",
