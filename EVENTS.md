@@ -28,10 +28,10 @@ Content is never included in the payload: only its detected kind and length. His
 
 ## Commands honored (`bread.command.clip.*`)
 
-| Verb | Effect |
-|------|--------|
-| `clear` | Deletes all clipboard history (text entries, stored image files, pinned entries; it's a hard reset). Emits `bread.clip.clear.done`/`.failed`. |
-| `pin` | Payload `{ "id": <entry id>, "pin": true \| false }`. Pins or unpins a history entry by id; `pin` defaults to `true` if omitted. Emits `bread.clip.pinned`/`bread.clip.pin.failed`. |
+| Verb | Data | Effect |
+|------|------|--------|
+| `clear` | none | Deletes all clipboard history (text entries, stored image files, pinned entries; it's a hard reset). Emits `bread.clip.clear.done`/`.failed`. |
+| `pin` | `{ "id": <entry id>, "pin": true \| false }` | Pins or unpins a history entry by id; `pin` defaults to `true` if omitted. Emits `bread.clip.pinned`/`bread.clip.pin.failed`. |
 
 Pinned entries are exempt from the daemon's trimming and sort to the top of
 the history list. The popup's Ctrl+P toggle writes the same `pinned` column
@@ -40,7 +40,7 @@ directly (it doesn't round-trip through the bus), and also emits
 from `list_entries`: there is currently no read API on the bus for the
 history contents.
 
-### Not implemented: `select`
+## Not implemented
 
 `select` (remote-activate a row from the bus, e.g. "paste entry 42 now")
 is still deliberately not implemented: the popup is a short-lived process
