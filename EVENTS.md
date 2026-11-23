@@ -1,4 +1,4 @@
-# breadclip: bread event integration
+# clip: bread event integration
 
 breadclip is a standalone clipboard manager: it works exactly the same with
 or without `breadd` running. When breadd *is* present, `breadclipd` publishes
